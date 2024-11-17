@@ -261,3 +261,54 @@ function calculatePriority(messages) {
   if (hoursSinceLastMessage < 6 || messageFrequency > 5) return 'medium';
   return 'low';
 }
+
+export const initializeRoomListener = (client, callback) => {
+  client.on('Room.timeline', (event, room) => {
+    if (event.getType() === 'm.room.message') {
+      const messageData = {
+        roomId: room.roomId,
+        roomName: room.name || room.roomId,
+        content: event.getContent().body,
+        sender: event.getSender(),
+        senderName: room.getMember(event.getSender())?.name || event.getSender(),
+        timestamp: event.getDate().toISOString()
+      };
+      
+      callback(messageData);
+    }
+  });
+};
+
+export const getRoomSummaryWithUpdates = async (client, roomId, onUpdate) => {
+  // Initial summary fetch
+  const summary = await getRoomSummary(client, roomId);
+  
+  // Set up real-time updates
+  const timelineCallback = (event, room) => {
+    if (room.roomId === roomId && event.getType() === 'm.room.message') {
+      const updatedSummary = {
+        ...summary,
+        totalMessages: summary.totalMessages + 1,
+        lastContact: event.getDate().toISOString(),
+        recentActivity: [
+          {
+            sender: event.getSender(),
+            senderName: room.getMember(event.getSender())?.name || event.getSender(),
+            content: event.getContent().body,
+            timestamp: event.getDate().toISOString()
+          },
+          ...summary.recentActivity.slice(0, 4)
+        ]
+      };
+      
+      onUpdate(updatedSummary);
+    }
+  };
+
+  client.on('Room.timeline', timelineCallback);
+  
+  // Return cleanup function
+  return () => {
+    client.removeListener('Room.timeline', timelineCallback);
+  };
+};

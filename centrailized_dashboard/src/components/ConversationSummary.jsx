@@ -8,6 +8,8 @@ const ConversationSummary = ({ roomId }) => {
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    let cleanup;
+    
     const fetchSummary = async () => {
       if (!roomId) return;
       
@@ -20,25 +22,32 @@ const ConversationSummary = ({ roomId }) => {
         console.log('Summary response:', response.data);
         
         setSummary(response.data);
-      } catch (error) {
-        console.error('Error fetching summary:', {
-          message: error.message,
-          response: error.response?.data,
-          status: error.response?.status
-        });
+
+        // Set up WebSocket connection for real-time updates
+        const ws = new WebSocket(`wss://your-backend-url/rooms/${roomId}/updates`);
         
-        setError(
-          error.response?.data?.details || 
-          error.response?.data?.error || 
-          'Failed to load conversation summary'
-        );
+        ws.onmessage = (event) => {
+          const updatedSummary = JSON.parse(event.data);
+          setSummary(prev => ({
+            ...prev,
+            ...updatedSummary
+          }));
+        };
+
+        cleanup = () => {
+          ws.close();
+        };
+      } catch (error) {
+        console.error('Error fetching summary:', error);
+        setError(error.response?.data?.error || 'Failed to load conversation summary');
       } finally {
         setLoading(false);
       }
     };
 
     fetchSummary();
-  }, [roomId, retryCount]);
+    return () => cleanup?.();
+  }, [roomId]);
 
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);
