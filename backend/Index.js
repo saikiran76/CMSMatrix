@@ -3,11 +3,11 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
-import { initializeMatrixClient } from './backend/services/matrixService.js';
-import authRoutes from './backend/routes/authRoutes.js';
-import roomRoutes from './backend/routes/roomRoutes.js';
-import adminRoutes from './backend/routes/adminRoutes.js';
-import { errorHandler } from './backend/middleware/errorHandler.js';
+import { initializeMatrixClient } from './services/matrixService.js';
+import authRoutes from './routes/authRoutes.js';
+import roomRoutes from './routes/roomRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
 
