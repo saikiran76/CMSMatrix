@@ -58,10 +58,10 @@ router.get('/', authenticateToken, async (req, res) => {
         id: room.roomId,
         name: room.name || 'Unnamed Room',
         lastMessage: lastEvent?.getContent()?.body || '',
-        status: room.getJoinedMemberCount() > 2 ? 'active' : 'inactive',
+        status: room.getJoinedMemberCount() > 1 ? 'active' : 'inactive',
         assignee: '@ksk76:matrix.org',
         lastActive: lastEvent?.getDate() || new Date(),
-        isActive: timeline.length > 0,
+        isActive: room.getJoinedMemberCount() > 1,
         memberCount: room.getJoinedMemberCount()
       };
     });
