@@ -18,9 +18,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: ['http://localhost:5173', 'https://cms-matrix.vercel.app'],
   credentials: true,
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+  exposedHeaders: ['Content-Length', 'X-Requested-With']
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -67,6 +67,7 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.options('*', cors());
 // Routes
 app.use('/auth', authRoutes);
 app.use('/rooms', roomRoutes);
