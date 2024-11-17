@@ -24,7 +24,7 @@ const ConversationSummary = ({ roomId }) => {
         setSummary(response.data);
 
         // Set up WebSocket connection for real-time updates
-        const ws = new WebSocket(`wss://your-backend-url/rooms/${roomId}/updates`);
+        const ws = new WebSocket(`wss://cmsmatrix.onrender.com/rooms/${roomId}/updates`);
         
         ws.onmessage = (event) => {
           const updatedSummary = JSON.parse(event.data);
