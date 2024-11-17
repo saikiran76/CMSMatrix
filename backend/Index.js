@@ -19,8 +19,10 @@ app.use(cors({
   origin: ['http://localhost:5173', 'https://cms-matrix.vercel.app'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
-  exposedHeaders: ['Content-Length', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+  exposedHeaders: ['Set-Cookie'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -65,6 +67,11 @@ app.get('/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1,
     matrixClient: !!app.locals.matrixClient
   });
+});
+
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.status(204).end();
 });
 
 app.options('*', cors());
