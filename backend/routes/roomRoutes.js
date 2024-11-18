@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority } from '../services/matrixService.js';
+import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, generateMessageSummary } from '../services/matrixService.js';
 
 const router = express.Router();
 
@@ -229,6 +229,67 @@ router.post('/:roomId/messages', authenticateToken, async (req, res) => {
     res.json(messageWithPriority);
   } catch (error) {
     console.error('Error sending message:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const client = req.app.locals.matrixClient;
+    const timeRange = req.query.timeRange || '24h'; // default to last 24 hours
+
+    // Get messages for the specified time range
+    const messages = await getRoomMessages(client, decodeURIComponent(roomId));
+    
+    // Generate AI-based summary
+    const summary = {
+      messageCount: messages.length,
+      keyTopics: extractKeyTopics(messages),
+      priorityBreakdown: {
+        high: messages.filter(m => m.priority === 'high').length,
+        medium: messages.filter(m => m.priority === 'medium').length,
+        low: messages.filter(m => m.priority === 'low').length
+      },
+      sentimentAnalysis: messages.reduce((acc, msg) => {
+        const sentiment = analyzeSentiment(msg.content);
+        acc[sentiment] = (acc[sentiment] || 0) + 1;
+        return acc;
+      }, {}),
+      categories: messages.reduce((acc, msg) => {
+        const category = categorizeMessage(msg.content);
+        acc[category] = (acc[category] || 0) + 1;
+        return acc;
+      }, {})
+    };
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error generating conversation summary:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:roomId/batch-analyze', authenticateToken, async (req, res) => {
+  try {
+    const { messages } = req.body;
+    const client = req.app.locals.matrixClient;
+    const batchResults = [];
+    const batchSize = 5;
+
+    for (let i = 0; i < messages.length; i += batchSize) {
+      const batch = messages.slice(i, i + batchSize);
+      const batchPromises = batch.map(msg => generateMessageSummary(msg.content));
+      const batchAnalysis = await Promise.all(batchPromises);
+      batchResults.push(...batchAnalysis);
+    }
+
+    res.json({
+      results: batchResults,
+      totalProcessed: batchResults.length
+    });
+  } catch (error) {
+    console.error('Error in batch analysis:', error);
     res.status(500).json({ error: error.message });
   }
 });

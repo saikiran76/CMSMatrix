@@ -1,6 +1,18 @@
 import sdk from 'matrix-js-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { RateLimiter } from 'limiter';
+import { getCachedAnalysis, setCachedAnalysis } from './cacheService.js';
 
 let matrixClient = null;
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+// Create rate limiter - 10 requests per minute
+const limiter = new RateLimiter({
+  tokensPerInterval: 10,
+  interval: 'minute'
+});
 
 export const initializeMatrixClient = async () => {
   try {
@@ -89,8 +101,6 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
           if (state === 'PREPARED') resolve();
         });
       });
-    }
-
     const timeline = room.timeline || [];
     const messages = timeline
       .filter(event => event.getType() === 'm.room.message')
@@ -109,7 +119,7 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
       ...msg,
       priority: calculateMessagePriority(msg.content)
     }));
-
+  }
     return messagesWithPriority;
   } catch (error) {
     console.error('Error fetching room messages:', error);
@@ -327,15 +337,19 @@ function calculatePriority(messages) {
 }
 
 export const initializeRoomListener = (client, callback) => {
-  client.on('Room.timeline', (event, room) => {
+  client.on('Room.timeline', async (event, room) => {
     if (event.getType() === 'm.room.message') {
+      // Get message data from Matrix
       const messageData = {
         roomId: room.roomId,
         roomName: room.name || room.roomId,
         content: event.getContent().body,
         sender: event.getSender(),
         senderName: room.getMember(event.getSender())?.name || event.getSender(),
-        timestamp: event.getDate().toISOString()
+        timestamp: event.getDate().toISOString(),
+        platform: 'matrix',
+        priority: calculatePriority([event]),
+        summary: await generateMessageSummary(event.getContent().body)
       };
       
       callback(messageData);
@@ -343,11 +357,104 @@ export const initializeRoomListener = (client, callback) => {
   });
 };
 
+const generateMessageSummary = async (content) => {
+  try {
+    // Check cache first
+    const cached = getCachedAnalysis(content, 'summary');
+    if (cached) return cached;
+
+    // Check rate limit
+    const hasToken = await limiter.tryRemoveTokens(1);
+    if (!hasToken) {
+      console.warn('AI API rate limit reached, using fallback analysis');
+      return generateFallbackAnalysis(content);
+    }
+
+    const analysis = await generateAIAnalysis(content);
+    setCachedAnalysis(content, 'summary', analysis);
+    return analysis;
+  } catch (error) {
+    console.error('Error in generateMessageSummary:', error);
+    return generateFallbackAnalysis(content);
+  }
+};
+
+const generateAIAnalysis = async (content) => {
+  const prompt = `Analyze this message and provide a JSON response with the following structure:
+    {
+      "keyPoints": [array of main topics],
+      "sentiment": "positive/negative/neutral",
+      "category": "technical/inquiry/feedback/urgent/general",
+      "priority": "high/medium/low",
+      "suggestedResponse": [array of 2-3 possible responses]
+    }
+    Message: "${content}"
+    Only respond with valid JSON, no additional text.`;
+
+  const result = await model.generateContent(prompt);
+  return {
+    ...JSON.parse(result.response.text()),
+    timestamp: new Date().toISOString(),
+    originalContent: content
+  };
+};
+
+const analyzeSentiment = (content) => {
+  // Add sentiment analysis logic
+  const keywords = {
+    positive: ['thanks', 'great', 'good', 'happy', 'pleased'],
+    negative: ['issue', 'problem', 'error', 'wrong', 'bad']
+  };
+  
+  content = content.toLowerCase();
+  let sentiment = 'neutral';
+  
+  if (keywords.positive.some(word => content.includes(word))) sentiment = 'positive';
+  if (keywords.negative.some(word => content.includes(word))) sentiment = 'negative';
+  
+  return sentiment;
+};
+
+const categorizeMessage = (content) => {
+  const categories = {
+    technical: ['error', 'bug', 'issue', 'problem', 'broken'],
+    inquiry: ['how', 'what', 'when', 'where', 'why'],
+    feedback: ['suggest', 'improve', 'better', 'would', 'could'],
+    urgent: ['asap', 'urgent', 'emergency', 'critical']
+  };
+
+  content = content.toLowerCase();
+  for (const [category, keywords] of Object.entries(categories)) {
+    if (keywords.some(word => content.includes(word))) {
+      return category;
+    }
+  }
+  return 'general';
+};
+
 export const getRoomSummaryWithUpdates = async (client, roomId, onUpdate) => {
-  // Initial summary fetch
   const summary = await getRoomSummary(client, roomId);
   
-  // Set up real-time updates
+  // Add AI analysis for recent messages
+  const recentMessages = summary.recentActivity.map(msg => msg.content);
+  const aiSummaryPrompt = `Analyze these ${recentMessages.length} messages and provide a JSON response with:
+  {
+    "conversationTone": "string",
+    "mainTopics": [array of topics],
+    "actionItems": [array of required actions],
+    "customerSentiment": "string",
+    "suggestedNextSteps": [array of suggestions]
+  }`;
+
+  try {
+    const result = await model.generateContent(aiSummaryPrompt);
+    const aiAnalysis = JSON.parse(result.response.text());
+    summary.aiAnalysis = aiAnalysis;
+  } catch (error) {
+    console.error('Error generating conversation AI summary:', error);
+    summary.aiAnalysis = null;
+  }
+
   const timelineCallback = (event, room) => {
     if (room.roomId === roomId && event.getType() === 'm.room.message') {
       const updatedSummary = {
@@ -370,11 +477,7 @@ export const getRoomSummaryWithUpdates = async (client, roomId, onUpdate) => {
   };
 
   client.on('Room.timeline', timelineCallback);
-  
-  // Return cleanup function
-  return () => {
-    client.removeListener('Room.timeline', timelineCallback);
-  };
+  return () => client.removeListener('Room.timeline', timelineCallback);
 };
 
 export const generateResponseSuggestions = async (message, context) => {
