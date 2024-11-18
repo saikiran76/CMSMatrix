@@ -91,10 +91,10 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
       });
     }
 
-    // Get timeline events
-    const events = await client.scrollback(room, limit);
-    const messages = events
+    const timeline = room.timeline || [];
+    const messages = timeline
       .filter(event => event.getType() === 'm.room.message')
+      .slice(-limit)
       .map(event => ({
         id: event.getId(),
         content: event.getContent().body || '',
@@ -104,13 +104,67 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
         type: event.getType()
       }));
 
-    console.log(`Retrieved ${messages.length} messages for room ${roomId}`);
-    return messages;
+    // Calculate priority for messages
+    const messagesWithPriority = messages.map(msg => ({
+      ...msg,
+      priority: calculateMessagePriority(msg.content)
+    }));
+
+    return messagesWithPriority;
   } catch (error) {
     console.error('Error fetching room messages:', error);
     throw new Error(`Failed to fetch room messages: ${error.message}`);
   }
 };
+
+const calculateMessagePriority = (message, room) => {
+  // Get message content and metadata
+  const content = message.getContent().body.toLowerCase();
+  const sender = message.getSender();
+  const timestamp = message.getDate();
+
+  // Priority indicators
+  const urgentKeywords = ['urgent', 'asap', 'emergency', 'critical', 'important'];
+  const mediumKeywords = ['review', 'update', 'question', 'help', 'issue'];
+  
+  // Calculate time-based priority
+  const hoursSinceMessage = (Date.now() - timestamp) / (1000 * 60 * 60);
+  
+  // Calculate keyword-based priority
+  const hasUrgentKeywords = urgentKeywords.some(keyword => content.includes(keyword));
+  const hasMediumKeywords = mediumKeywords.some(keyword => content.includes(keyword));
+  
+  // Calculate response time priority
+  const responseTime = getAverageResponseTime(room);
+  
+  // Combine factors for final priority
+  if (hasUrgentKeywords || hoursSinceMessage < 1 || responseTime > 4) {
+    return 'high';
+  } else if (hasMediumKeywords || hoursSinceMessage < 4 || responseTime > 2) {
+    return 'medium';
+  }
+  return 'low';
+};
+
+function getAverageResponseTime(room) {
+  const timeline = room.timeline || [];
+  let totalResponseTime = 0;
+  let responseCount = 0;
+
+  // Calculate average response time from customer messages
+  for (let i = 1; i < timeline.length; i++) {
+    const prevMessage = timeline[i - 1];
+    const currentMessage = timeline[i];
+    
+    if (prevMessage.getSender() !== currentMessage.getSender()) {
+      const responseTime = (currentMessage.getDate() - prevMessage.getDate()) / (1000 * 60 * 60);
+      totalResponseTime += responseTime;
+      responseCount++;
+    }
+  }
+
+  return responseCount > 0 ? totalResponseTime / responseCount : 0;
+}
 
 export const getRoomSummary = async (client, roomId) => {
   try {
@@ -321,4 +375,57 @@ export const getRoomSummaryWithUpdates = async (client, roomId, onUpdate) => {
   return () => {
     client.removeListener('Room.timeline', timelineCallback);
   };
+};
+
+export const generateResponseSuggestions = async (message, context) => {
+  const priority = calculatePriority([message]);
+  const keyTopics = extractKeyTopics([message]);
+  
+  // Generate response templates based on priority and topics
+  const templates = {
+    high: [
+      "I understand this is urgent. Let me help you with {topic} right away.",
+      "I'll prioritize your {topic} request and get back to you shortly.",
+      "Thank you for bringing this urgent matter to our attention."
+    ],
+    medium: [
+      "I'd be happy to help you with {topic}.",
+      "Let me look into your {topic} question.",
+      "Thanks for your patience while I check this for you."
+    ],
+    low: [
+      "Thank you for your message about {topic}.",
+      "I'll be glad to assist you with this.",
+      "Let me help you with your request."
+    ]
+  };
+
+  return templates[priority].map(template => 
+    template.replace('{topic}', keyTopics[0] || 'request')
+  );
+};
+
+export const sendMessage = async (client, roomId, content) => {
+  try {
+    const room = client.getRoom(roomId);
+    if (!room) {
+      throw new Error('Room not found');
+    }
+
+    const response = await client.sendMessage(roomId, {
+      msgtype: 'm.text',
+      body: content
+    });
+
+    return {
+      eventId: response.event_id,
+      content,
+      sender: client.getUserId(),
+      timestamp: new Date().getTime(),
+      type: 'm.room.message'
+    };
+  } catch (error) {
+    console.error('Error sending message:', error);
+    throw new Error(`Failed to send message: ${error.message}`);
+  }
 };

@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRoomMessages, getRoomSummary, getCustomerDetails } from '../services/matrixService.js';
+import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority } from '../services/matrixService.js';
 
 const router = express.Router();
 
@@ -206,6 +206,31 @@ router.get('/debug/client', authenticateToken, (req, res) => {
     roomCount: client?.getRooms()?.length || 0,
     accessTokenPresent: !!client?.getAccessToken()
   });
+});
+
+router.post('/:roomId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { content } = req.body;
+    const client = req.app.locals.matrixClient;
+
+    if (!client) {
+      throw new Error('Matrix client not initialized');
+    }
+
+    const message = await sendMessage(client, decodeURIComponent(roomId), content);
+    
+    // Calculate priority for the new message
+    const messageWithPriority = {
+      ...message,
+      priority: calculateMessagePriority(message, client.getRoom(roomId))
+    };
+
+    res.json(messageWithPriority);
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;
