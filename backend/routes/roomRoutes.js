@@ -211,25 +211,48 @@ router.get('/debug/client', authenticateToken, (req, res) => {
 router.post('/:roomId/messages', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { content } = req.body;
+    const { content, priority } = req.body;
     const client = req.app.locals.matrixClient;
 
     if (!client) {
       throw new Error('Matrix client not initialized');
     }
 
+    if (!content) {
+      return res.status(400).json({ error: 'Message content is required' });
+    }
+
+    // Wait for client sync if needed
+    if (!client.isInitialSyncComplete()) {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Sync timeout')), 10000);
+        client.once('sync', (state) => {
+          if (state === 'PREPARED') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+      });
+    }
+
     const message = await sendMessage(client, decodeURIComponent(roomId), content);
     
-    // Calculate priority for the new message
     const messageWithPriority = {
       ...message,
-      priority: calculateMessagePriority(message, client.getRoom(roomId))
+      priority: priority || calculateMessagePriority(message, client.getRoom(roomId))
     };
 
     res.json(messageWithPriority);
   } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Detailed error in sending message:', {
+      error: error.message,
+      stack: error.stack,
+      roomId: req.params.roomId
+    });
+    res.status(500).json({ 
+      error: 'Failed to send message',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

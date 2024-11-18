@@ -527,20 +527,46 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error('Room not found');
     }
 
-    const response = await client.sendMessage(roomId, {
-      msgtype: 'm.text',
-      body: content
-    });
+    // Ensure room is joined
+    const membership = room.getMyMembership();
+    if (membership !== 'join') {
+      throw new Error(`Cannot send message - room membership is ${membership}`);
+    }
 
-    return {
-      eventId: response.event_id,
-      content,
-      sender: client.getUserId(),
-      timestamp: new Date().getTime(),
-      type: 'm.room.message'
-    };
+    // Send message with retry logic
+    let retries = 3;
+    let lastError;
+    
+    while (retries > 0) {
+      try {
+        const response = await client.sendMessage(roomId, {
+          msgtype: 'm.text',
+          body: content
+        });
+
+        return {
+          eventId: response.event_id,
+          content,
+          sender: client.getUserId(),
+          timestamp: new Date().getTime(),
+          type: 'm.room.message'
+        };
+      } catch (error) {
+        lastError = error;
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    throw lastError || new Error('Failed to send message after retries');
   } catch (error) {
-    console.error('Error sending message:', error);
-    throw new Error(`Failed to send message: ${error.message}`);
+    console.error('Detailed error in sendMessage:', {
+      error: error.message,
+      roomId,
+      userId: client.getUserId()
+    });
+    throw error;
   }
 };
