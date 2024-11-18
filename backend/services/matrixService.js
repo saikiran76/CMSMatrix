@@ -117,7 +117,7 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
   }
 };
 
-const calculateMessagePriority = (message, room) => {
+export const calculateMessagePriority = (message, room) => {
   // Get message content and metadata
   const content = message.getContent().body.toLowerCase();
   const sender = message.getSender();
