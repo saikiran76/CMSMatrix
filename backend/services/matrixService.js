@@ -82,10 +82,19 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
       throw new Error('Room not found');
     }
 
-    const timeline = room.timeline || [];
-    const messages = timeline
+    // Wait for room state to be ready
+    if (!client.isInitialSyncComplete()) {
+      await new Promise((resolve) => {
+        client.once('sync', (state) => {
+          if (state === 'PREPARED') resolve();
+        });
+      });
+    }
+
+    // Get timeline events
+    const events = await client.scrollback(room, limit);
+    const messages = events
       .filter(event => event.getType() === 'm.room.message')
-      .slice(-limit)
       .map(event => ({
         id: event.getId(),
         content: event.getContent().body || '',
@@ -95,7 +104,8 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
         type: event.getType()
       }));
 
-    return messages.reverse();
+    console.log(`Retrieved ${messages.length} messages for room ${roomId}`);
+    return messages;
   } catch (error) {
     console.error('Error fetching room messages:', error);
     throw new Error(`Failed to fetch room messages: ${error.message}`);

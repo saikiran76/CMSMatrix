@@ -22,21 +22,6 @@ const ConversationSummary = ({ roomId }) => {
         console.log('Summary response:', response.data);
         
         setSummary(response.data);
-
-        // Set up WebSocket connection for real-time updates
-        const ws = new WebSocket(`wss://cmsmatrix.onrender.com/rooms/${roomId}/updates`);
-        
-        ws.onmessage = (event) => {
-          const updatedSummary = JSON.parse(event.data);
-          setSummary(prev => ({
-            ...prev,
-            ...updatedSummary
-          }));
-        };
-
-        cleanup = () => {
-          ws.close();
-        };
       } catch (error) {
         console.error('Error fetching summary:', error);
         setError(error.response?.data?.error || 'Failed to load conversation summary');
