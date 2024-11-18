@@ -357,7 +357,7 @@ export const initializeRoomListener = (client, callback) => {
   });
 };
 
-const generateMessageSummary = async (content) => {
+export const generateMessageSummary = async (content) => {
   try {
     // Check cache first
     const cached = getCachedAnalysis(content, 'summary');
@@ -399,7 +399,7 @@ const generateAIAnalysis = async (content) => {
   };
 };
 
-const analyzeSentiment = (content) => {
+export const analyzeSentiment = (content) => {
   // Add sentiment analysis logic
   const keywords = {
     positive: ['thanks', 'great', 'good', 'happy', 'pleased'],
@@ -415,7 +415,7 @@ const analyzeSentiment = (content) => {
   return sentiment;
 };
 
-const categorizeMessage = (content) => {
+export const categorizeMessage = (content) => {
   const categories = {
     technical: ['error', 'bug', 'issue', 'problem', 'broken'],
     inquiry: ['how', 'what', 'when', 'where', 'why'],

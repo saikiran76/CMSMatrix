@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, generateMessageSummary } from '../services/matrixService.js';
+import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, categorizeMessage, analyzeSentiment,generateMessageSummary } from '../services/matrixService.js';
 
 const router = express.Router();
 
