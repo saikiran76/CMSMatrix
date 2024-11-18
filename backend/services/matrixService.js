@@ -314,11 +314,17 @@ export const getCustomerDetails = async (client, roomId) => {
 };
 
 // Helper functions
-function extractKeyTopics(messages) {
-  // Simple keyword extraction (you might want to use a more sophisticated approach)
+export function extractKeyTopics(messages) {
   const commonWords = new Set(['the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have']);
   const words = messages
-    .map(event => event.getContent().body.toLowerCase().split(/\W+/))
+    .map(event => {
+      try {
+        return event.getContent().body.toLowerCase().split(/\W+/);
+      } catch (error) {
+        console.warn('Error processing message content:', error);
+        return [];
+      }
+    })
     .flat()
     .filter(word => word.length > 3 && !commonWords.has(word));
 

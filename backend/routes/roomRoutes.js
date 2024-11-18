@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, categorizeMessage, analyzeSentiment,generateMessageSummary } from '../services/matrixService.js';
+import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, categorizeMessage, analyzeSentiment,generateMessageSummary, extractKeyTopics } from '../services/matrixService.js';
 
 const router = express.Router();
 
@@ -237,19 +237,23 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
   try {
     const { roomId } = req.params;
     const client = req.app.locals.matrixClient;
-    const timeRange = req.query.timeRange || '24h';
 
-    // Get messages for the specified time range
+    if (!client) {
+      throw new Error('Matrix client not initialized');
+    }
+
     const messages = await getRoomMessages(client, decodeURIComponent(roomId));
     
-    // Format messages for key topics extraction
+    if (!messages || !Array.isArray(messages)) {
+      throw new Error('Invalid messages data received');
+    }
+
     const formattedMessages = messages.map(msg => ({
-      getContent: () => ({ body: msg.content }),
+      getContent: () => ({ body: msg.content || '' }),
       getSender: () => msg.sender,
       getDate: () => new Date(msg.timestamp)
     }));
 
-    // Generate AI-based summary
     const summary = {
       messageCount: messages.length,
       keyTopics: extractKeyTopics(formattedMessages),
@@ -259,12 +263,12 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
         low: messages.filter(m => m.priority === 'low').length
       },
       sentimentAnalysis: messages.reduce((acc, msg) => {
-        const sentiment = analyzeSentiment(msg.content);
+        const sentiment = analyzeSentiment(msg.content || '');
         acc[sentiment] = (acc[sentiment] || 0) + 1;
         return acc;
       }, {}),
       categories: messages.reduce((acc, msg) => {
-        const category = categorizeMessage(msg.content);
+        const category = categorizeMessage(msg.content || '');
         acc[category] = (acc[category] || 0) + 1;
         return acc;
       }, {})
@@ -274,8 +278,8 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
   } catch (error) {
     console.error('Error generating conversation summary:', error);
     res.status(500).json({ 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+      error: 'Failed to generate conversation summary',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
