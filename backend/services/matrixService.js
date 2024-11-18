@@ -101,6 +101,8 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
           if (state === 'PREPARED') resolve();
         });
       });
+    }
+
     const timeline = room.timeline || [];
     const messages = timeline
       .filter(event => event.getType() === 'm.room.message')
@@ -117,9 +119,13 @@ export const getRoomMessages = async (client, roomId, limit = 50) => {
     // Calculate priority for messages
     const messagesWithPriority = messages.map(msg => ({
       ...msg,
-      priority: calculateMessagePriority(msg.content)
+      priority: calculateMessagePriority({
+        getContent: () => ({ body: msg.content }),
+        getSender: () => msg.sender,
+        getDate: () => new Date(msg.timestamp)
+      }, room)
     }));
-  }
+
     return messagesWithPriority;
   } catch (error) {
     console.error('Error fetching room messages:', error);

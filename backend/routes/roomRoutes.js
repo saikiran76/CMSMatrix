@@ -237,15 +237,22 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
   try {
     const { roomId } = req.params;
     const client = req.app.locals.matrixClient;
-    const timeRange = req.query.timeRange || '24h'; // default to last 24 hours
+    const timeRange = req.query.timeRange || '24h';
 
     // Get messages for the specified time range
     const messages = await getRoomMessages(client, decodeURIComponent(roomId));
     
+    // Format messages for key topics extraction
+    const formattedMessages = messages.map(msg => ({
+      getContent: () => ({ body: msg.content }),
+      getSender: () => msg.sender,
+      getDate: () => new Date(msg.timestamp)
+    }));
+
     // Generate AI-based summary
     const summary = {
       messageCount: messages.length,
-      keyTopics: extractKeyTopics(messages),
+      keyTopics: extractKeyTopics(formattedMessages),
       priorityBreakdown: {
         high: messages.filter(m => m.priority === 'high').length,
         medium: messages.filter(m => m.priority === 'medium').length,
@@ -266,7 +273,10 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
     res.json(summary);
   } catch (error) {
     console.error('Error generating conversation summary:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    });
   }
 });
 
