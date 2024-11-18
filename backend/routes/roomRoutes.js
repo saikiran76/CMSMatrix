@@ -78,31 +78,34 @@ router.get('/', authenticateToken, async (req, res) => {
 
 // Get messages for a specific room
 router.get('/:roomId/messages', authenticateToken, async (req, res) => {
-    try {
-      const { roomId } = req.params;
-      const { limit = 50, before } = req.query;
-      const client = req.app.locals.matrixClient;
-  
-      if (!client) {
-        throw new Error('Matrix client not initialized');
-      }
-  
-      // Decode the room ID if it's URL encoded
-      const decodedRoomId = decodeURIComponent(roomId);
-  
-      const messages = await getRoomMessages(client, decodedRoomId, parseInt(limit));
-      
-      res.json({
-        messages,
-        roomId: decodedRoomId,
-        nextToken: before // Include pagination token if available
-      });
-    } catch (error) {
-      console.error('Error fetching room messages:', error);
-      res.status(error.message.includes('not found') ? 404 : 500).json({ 
-        error: error.message 
-      });
+  try {
+    const { roomId } = req.params;
+    const { limit = 50, before } = req.query;
+    const client = req.app.locals.matrixClient;
+
+    console.log('Fetching messages for room:', roomId);
+    console.log('Matrix client state:', client?.getSyncState());
+
+    if (!client) {
+      throw new Error('Matrix client not initialized');
     }
+
+    const decodedRoomId = decodeURIComponent(roomId);
+    const messages = await getRoomMessages(client, decodedRoomId, parseInt(limit));
+    
+    console.log(`Returning ${messages.length} messages for room ${roomId}`);
+    
+    res.json({
+      messages,
+      roomId: decodedRoomId,
+      nextToken: before
+    });
+  } catch (error) {
+    console.error('Error fetching room messages:', error);
+    res.status(error.message.includes('not found') ? 404 : 500).json({ 
+      error: error.message 
+    });
+  }
 });
 
 // Get customer details with enhanced error handling
