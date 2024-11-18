@@ -1,51 +1,47 @@
+import { useState, useEffect } from 'react';
+import axios from '../utils/axios';
+
 const ResponseSuggestions = ({ message, onSelectSuggestion }) => {
-    const [suggestions, setSuggestions] = useState([]);
-    const [loading, setLoading] = useState(false);
-  
-    useEffect(() => {
-      const generateSuggestions = async () => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (!message) return;
+
+      try {
         setLoading(true);
-        try {
-          const response = await axios.post('/ai/suggestions', {
-            messageContent: message.content,
-            priority: message.priority,
-            context: {
-              sender: message.senderName,
-              timestamp: message.timestamp
-            }
-          });
-          setSuggestions(response.data.suggestions);
-        } catch (error) {
-          console.error('Error generating suggestions:', error);
-        } finally {
-          setLoading(false);
-        }
-      };
-  
-      if (message) {
-        generateSuggestions();
+        const response = await axios.get(`/ai/suggestions?message=${encodeURIComponent(message)}`);
+        setSuggestions(response.data.suggestions || []);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setSuggestions([]);
+      } finally {
+        setLoading(false);
       }
-    }, [message]);
-  
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center p-2">
-          <div className="animate-spin h-4 w-4 border-t-2 border-primary"></div>
-        </div>
-      );
-    }
-  
-    return (
-      <div className="flex gap-2 overflow-x-auto p-2">
+    };
+
+    fetchSuggestions();
+  }, [message]);
+
+  if (loading || !suggestions.length) return null;
+
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-sm text-gray-400">Suggested Responses:</p>
+      <div className="flex flex-wrap gap-2">
         {suggestions.map((suggestion, index) => (
           <button
             key={index}
             onClick={() => onSelectSuggestion(suggestion)}
-            className="px-3 py-1 text-sm bg-dark-lighter rounded-full hover:bg-primary hover:text-white transition-colors"
+            className="px-3 py-1 text-sm bg-primary/20 hover:bg-primary/30 rounded-full transition-colors"
           >
             {suggestion}
           </button>
         ))}
       </div>
-    );
-  };
+    </div>
+  );
+};
+
+export default ResponseSuggestions;
