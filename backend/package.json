@@ -26,6 +26,7 @@
     "matrix-js-sdk": "^34.11.1",
     "mongodb": "^6.10.0",
     "mongoose": "^8.8.1",
+    "node-cache": "^5.1.2",
     "nodemon": "^3.1.7"
   }
 }
