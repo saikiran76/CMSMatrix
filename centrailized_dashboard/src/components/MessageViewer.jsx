@@ -5,10 +5,17 @@ const MessageViewer = ({ roomId }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+    setError(null);
+    setLoading(true);
   };
 
   useEffect(() => {
@@ -17,14 +24,24 @@ const MessageViewer = ({ roomId }) => {
         setLoading(true);
         setError(null);
 
-        const response = await axios.get(`/rooms/${encodeURIComponent(roomId)}/messages`);
-        setMessages(response.data.messages);
-        
-        // Scroll to bottom after messages load
-        setTimeout(scrollToBottom, 100);
+        const response = await axios.get(`/rooms/${encodeURIComponent(roomId)}/messages`, {
+          timeout: 10000, // 10 second timeout
+          retries: 3,
+          retryDelay: 1000
+        });
+
+        if (response.data.messages && Array.isArray(response.data.messages)) {
+          setMessages(response.data.messages);
+          setTimeout(scrollToBottom, 100);
+        } else {
+          throw new Error('Invalid messages format received');
+        }
       } catch (error) {
         console.error('Error fetching messages:', error);
-        setError(error.response?.data?.error || 'Failed to load messages');
+        const errorMessage = error.code === 'ERR_NETWORK' 
+          ? 'Unable to connect to server. Please check your connection and try again.'
+          : error.response?.data?.error || 'Failed to load messages';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -33,28 +50,28 @@ const MessageViewer = ({ roomId }) => {
     if (roomId) {
       fetchMessages();
     }
-  }, [roomId]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  }, [roomId, retryCount]);
 
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-error text-center">
-          <p className="mb-2">{error}</p>
+          <p className="mb-4">{error}</p>
           <button 
-            onClick={() => window.location.reload()}
-            className="text-primary hover:underline"
+            onClick={handleRetry}
+            className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
           >
             Retry
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
       </div>
     );
   }
