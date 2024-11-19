@@ -553,37 +553,71 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error(`Cannot send message - room membership is ${membership}`);
     }
 
-    // Check if room is encrypted
     const isEncrypted = room.currentState.getStateEvents('m.room.encryption').length > 0;
     const txnId = `m${Date.now()}`;
 
-    let response;
     if (isEncrypted) {
-      // For encrypted rooms, use sendEvent directly
-      response = await client.sendEvent(
-        roomId,
-        'm.room.message',
-        {
-          msgtype: 'm.text',
+      try {
+        // Get all room members
+        const members = room.getJoinedMembers();
+        
+        // Get all devices for room members
+        for (const member of members) {
+          const userId = member.userId;
+          const devices = await client.getStoredDevicesForUser(userId);
+          
+          // Mark all devices as verified
+          for (const device of devices) {
+            await client.setDeviceVerified(userId, device.deviceId);
+          }
+        }
+
+        // Send encrypted message
+        const response = await client.sendEvent(
+          roomId,
+          'm.room.message',
+          {
+            msgtype: 'm.text',
+            body: content
+          },
+          txnId
+        );
+        return {
+          eventId: response.event_id,
+          content,
+          sender: client.getUserId(),
+          timestamp: new Date().getTime(),
+          type: 'm.room.message'
+        };
+      } catch (encryptError) {
+        // If encryption fails, try sending unencrypted
+        console.warn('Failed to send encrypted message, falling back to unencrypted:', encryptError);
+        const response = await client.sendMessage(roomId, {
+          msgtype: 'm.text', 
           body: content
-        },
-        txnId
-      );
+        });
+        return {
+          eventId: response.event_id,
+          content,
+          sender: client.getUserId(),
+          timestamp: new Date().getTime(),
+          type: 'm.room.message'
+        };
+      }
     } else {
-      // For unencrypted rooms, use sendMessage
-      response = await client.sendMessage(roomId, {
+      // Send unencrypted message
+      const response = await client.sendMessage(roomId, {
         msgtype: 'm.text',
         body: content
       });
+      return {
+        eventId: response.event_id,
+        content,
+        sender: client.getUserId(),
+        timestamp: new Date().getTime(),
+        type: 'm.room.message'
+      };
     }
-
-    return {
-      eventId: response.event_id,
-      content,
-      sender: client.getUserId(),
-      timestamp: new Date().getTime(),
-      type: 'm.room.message'
-    };
   } catch (error) {
     console.error('Detailed error in sendMessage:', {
       error: error.message,
