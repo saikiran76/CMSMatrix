@@ -26,37 +26,35 @@ export const initializeMatrixClient = async () => {
       throw new Error('Olm is not available');
     }
 
+    // Generate a stable device ID if not provided
+    const deviceId = process.env.MATRIX_DEVICE_ID || 
+      `MATRIX_DEVICE_${Buffer.from(process.env.MATRIX_USER_ID).toString('base64')}`;
+
     await Olm.init();
     const cryptoStore = new NodeCryptoStore();
     
-    // Ensure baseUrl ends with a trailing slash
-    const baseUrl = process.env.MATRIX_HOME_SERVER.endsWith('/')
-      ? process.env.MATRIX_HOME_SERVER
-      : `${process.env.MATRIX_HOME_SERVER}/`;
-
     const client = createClient({
-      baseUrl,
+      baseUrl: process.env.MATRIX_HOME_SERVER,
       accessToken: process.env.MATRIX_ACCESS_TOKEN,
       userId: process.env.MATRIX_USER_ID,
-      deviceId: process.env.MATRIX_DEVICE_ID || `MATRIX_DEVICE_${Date.now()}`,
+      deviceId: deviceId, // Use the generated or provided device ID
       cryptoStore,
       store: new sdk.MemoryStore(),
-      sessionStore: cryptoStore, // Use cryptoStore as sessionStore
-      useAuthorizationHeader: true,
-      timelineSupport: true,
+      verificationMethods: [],
       cryptoCallbacks: {
         getCrossSigningKey: async () => null,
         saveCrossSigningKeys: async () => {},
         getSecretStorageKey: async () => null,
-      }
+      },
+      useAuthorizationHeader: true
     });
 
-    // Initialize crypto before starting client
     await client.initCrypto();
-    console.log('Crypto initialized successfully');
-
     await client.startClient({ initialSyncLimit: 10 });
-    console.log('Client started successfully');
+
+    // Set up automatic key sharing
+    client.setCryptoTrustCrossSignedDevices(false);
+    client.setGlobalErrorOnUnknownDevices(false);
 
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -557,59 +555,39 @@ export const sendMessage = async (client, roomId, content) => {
     const txnId = `m${Date.now()}`;
 
     if (isEncrypted) {
-      try {
-        // Get all room members
-        const members = room.getJoinedMembers();
-        
-        // Get all devices for room members
-        for (const member of members) {
-          const userId = member.userId;
-          const devices = await client.getStoredDevicesForUser(userId);
-          
-          // Mark all devices as verified
-          for (const device of devices) {
-            await client.setDeviceVerified(userId, device.deviceId);
-          }
+      // Trust all devices in the room
+      const members = room.getJoinedMemembers();
+      for (const member of members) {
+        const devices = await client.getStoredDevicesForUser(member.userId);
+        for (const device of devices) {
+          await client.setDeviceTrust(member.userId, device.deviceId, true, true);
         }
-
-        // Send encrypted message
-        const response = await client.sendEvent(
-          roomId,
-          'm.room.message',
-          {
-            msgtype: 'm.text',
-            body: content
-          },
-          txnId
-        );
-        return {
-          eventId: response.event_id,
-          content,
-          sender: client.getUserId(),
-          timestamp: new Date().getTime(),
-          type: 'm.room.message'
-        };
-      } catch (encryptError) {
-        // If encryption fails, try sending unencrypted
-        console.warn('Failed to send encrypted message, falling back to unencrypted:', encryptError);
-        const response = await client.sendMessage(roomId, {
-          msgtype: 'm.text', 
-          body: content
-        });
-        return {
-          eventId: response.event_id,
-          content,
-          sender: client.getUserId(),
-          timestamp: new Date().getTime(),
-          type: 'm.room.message'
-        };
       }
+
+      // Send encrypted message
+      const response = await client.sendEvent(
+        roomId,
+        'm.room.message',
+        {
+          msgtype: 'm.text',
+          body: content
+        },
+        txnId
+      );
+
+      return {
+        eventId: response.event_id,
+        content,
+        sender: client.getUserId(),
+        timestamp: new Date().getTime(),
+        type: 'm.room.message'
+      };
     } else {
-      // Send unencrypted message
       const response = await client.sendMessage(roomId, {
         msgtype: 'm.text',
         body: content
       });
+      
       return {
         eventId: response.event_id,
         content,
