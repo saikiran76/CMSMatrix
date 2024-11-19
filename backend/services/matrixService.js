@@ -44,8 +44,10 @@ export const initializeMatrixClient = async () => {
       deviceId: process.env.MATRIX_DEVICE_ID || `MATRIX_DEVICE_${Date.now()}`,
       cryptoStore,
       store: new sdk.MemoryStore(),
-      sessionStore, // Use our custom session store
+      useAuthorizationHeader: true,
       timelineSupport: true,
+      verificationMethods: [],
+      fallbackICEServerAllowed: false,
       cryptoCallbacks: {
         getCrossSigningKey: async () => null,
         saveCrossSigningKeys: async () => {},
@@ -53,17 +55,17 @@ export const initializeMatrixClient = async () => {
       }
     });
 
-    // Initialize crypto
-    console.log('Initializing crypto...');
-    await client.initCrypto();
-    
     console.log('Starting client...');
     await client.startClient({ initialSyncLimit: 10 });
 
-    // Wait for initial sync
+    // Wait for initial sync with better error handling
     console.log('Waiting for sync...');
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Sync timeout')), 30000);
+      const timeout = setTimeout(() => {
+        client.removeAllListeners('sync');
+        reject(new Error('Sync timeout'));
+      }, 30000);
+
       client.once('sync', (state) => {
         if (state === 'PREPARED') {
           clearTimeout(timeout);
@@ -72,7 +74,6 @@ export const initializeMatrixClient = async () => {
       });
     });
 
-    console.log('Matrix client initialized successfully');
     return client;
   } catch (error) {
     console.error('Detailed error in Matrix client initialization:', {
@@ -558,7 +559,8 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error(`Cannot send message - room membership is ${membership}`);
     }
 
-    const isEncrypted = room.getDefaultEncryption();
+    // Check if room is encrypted by checking for encryption event
+    const isEncrypted = room.currentState.getStateEvents('m.room.encryption').length > 0;
     const txnId = `m${Date.now()}`;
 
     let response;
