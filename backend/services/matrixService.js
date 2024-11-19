@@ -556,7 +556,7 @@ export const sendMessage = async (client, roomId, content) => {
 
     if (isEncrypted) {
       // Trust all devices in the room
-      const members = room.getJoinedMemembers();
+      const members = room.getJoinedMembers();
       for (const member of members) {
         const devices = await client.getStoredDevicesForUser(member.userId);
         for (const device of devices) {
