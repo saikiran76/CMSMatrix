@@ -559,15 +559,13 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error(`Cannot send message - room membership is ${membership}`);
     }
 
-    // Check if room is encrypted by checking for encryption event
+    // Check if room is encrypted
     const isEncrypted = room.currentState.getStateEvents('m.room.encryption').length > 0;
     const txnId = `m${Date.now()}`;
 
     let response;
     if (isEncrypted) {
-      // Ensure encryption is ready for the room
-      await client.crypto.ensureEncryptionReadiness(room);
-      
+      // For encrypted rooms, use sendEvent directly
       response = await client.sendEvent(
         roomId,
         'm.room.message',
@@ -578,6 +576,7 @@ export const sendMessage = async (client, roomId, content) => {
         txnId
       );
     } else {
+      // For unencrypted rooms, use sendMessage
       response = await client.sendMessage(roomId, {
         msgtype: 'm.text',
         body: content
