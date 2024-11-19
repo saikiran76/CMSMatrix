@@ -533,39 +533,33 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error(`Cannot send message - room membership is ${membership}`);
     }
 
-    // Send message with retry logic
-    let retries = 3;
-    let lastError;
-    
-    while (retries > 0) {
-      try {
-        const response = await client.sendMessage(roomId, {
-          msgtype: 'm.text',
-          body: content
-        });
+    // Generate unique transaction ID
+    const txnId = `m${Date.now()}`;
 
-        return {
-          eventId: response.event_id,
-          content,
-          sender: client.getUserId(),
-          timestamp: new Date().getTime(),
-          type: 'm.room.message'
-        };
-      } catch (error) {
-        lastError = error;
-        retries--;
-        if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-    }
+    // Send message using Matrix client's sendEvent method
+    const response = await client.sendEvent(
+      roomId,
+      'm.room.message',
+      {
+        msgtype: 'm.text',
+        body: content
+      },
+      txnId
+    );
 
-    throw lastError || new Error('Failed to send message after retries');
+    return {
+      eventId: response.event_id,
+      content,
+      sender: client.getUserId(),
+      timestamp: new Date().getTime(),
+      type: 'm.room.message'
+    };
   } catch (error) {
     console.error('Detailed error in sendMessage:', {
       error: error.message,
       roomId,
-      userId: client.getUserId()
+      userId: client.getUserId(),
+      stack: error.stack
     });
     throw error;
   }

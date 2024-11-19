@@ -211,7 +211,7 @@ router.get('/debug/client', authenticateToken, (req, res) => {
 router.post('/:roomId/messages', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { content, priority } = req.body;
+    const { content } = req.body;
     const client = req.app.locals.matrixClient;
 
     if (!client) {
@@ -222,8 +222,9 @@ router.post('/:roomId/messages', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    // Wait for client sync if needed
+    // Ensure client is ready
     if (!client.isInitialSyncComplete()) {
+      console.log('Waiting for sync completion...');
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Sync timeout')), 10000);
         client.once('sync', (state) => {
@@ -235,20 +236,28 @@ router.post('/:roomId/messages', authenticateToken, async (req, res) => {
       });
     }
 
+    console.log('Sending message to room:', roomId);
     const message = await sendMessage(client, decodeURIComponent(roomId), content);
     
-    const messageWithPriority = {
-      ...message,
-      priority: priority || calculateMessagePriority(message, client.getRoom(roomId))
-    };
+    // Calculate priority for the sent message
+    const room = client.getRoom(decodeURIComponent(roomId));
+    const priority = calculateMessagePriority({
+      getContent: () => ({ body: content }),
+      getSender: () => client.getUserId(),
+      getDate: () => new Date()
+    }, room);
 
-    res.json(messageWithPriority);
-  } catch (error) {
-    console.error('Detailed error in sending message:', {
-      error: error.message,
-      stack: error.stack,
-      roomId: req.params.roomId
+    console.log('Message sent successfully:', message.eventId);
+
+    res.json({
+      success: true,
+      eventId: message.eventId,
+      content: message.content,
+      timestamp: message.timestamp,
+      priority
     });
+  } catch (error) {
+    console.error('Failed to send message:', error);
     res.status(500).json({ 
       error: 'Failed to send message',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
