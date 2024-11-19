@@ -22,36 +22,64 @@ const limiter = new RateLimiter({
 
 export const initializeMatrixClient = async () => {
   try {
-    // Initialize Olm
+    if (!Olm) {
+      throw new Error('Olm is not available');
+    }
+
     await Olm.init();
-    
     const cryptoStore = new NodeCryptoStore();
     
+    // Create a simple in-memory session store
+    const sessionStore = {
+      getItem: (key) => sessionStore[key],
+      setItem: (key, value) => { sessionStore[key] = value; },
+      removeItem: (key) => { delete sessionStore[key]; },
+      clear: () => { Object.keys(sessionStore).forEach(key => delete sessionStore[key]); }
+    };
+
     const client = createClient({
       baseUrl: process.env.MATRIX_HOME_SERVER,
       accessToken: process.env.MATRIX_ACCESS_TOKEN,
       userId: process.env.MATRIX_USER_ID,
-      deviceId: process.env.MATRIX_DEVICE_ID,
+      deviceId: process.env.MATRIX_DEVICE_ID || `MATRIX_DEVICE_${Date.now()}`,
       cryptoStore,
-      sessionStore: new sdk.WebStorageSessionStore(new sdk.MemoryStore()),
-      verificationMethods: ['m.sas.v1'],
-      timelineSupport: true
+      store: new sdk.MemoryStore(),
+      sessionStore, // Use our custom session store
+      timelineSupport: true,
+      cryptoCallbacks: {
+        getCrossSigningKey: async () => null,
+        saveCrossSigningKeys: async () => {},
+        getSecretStorageKey: async () => null,
+      }
     });
 
     // Initialize crypto
+    console.log('Initializing crypto...');
     await client.initCrypto();
+    
+    console.log('Starting client...');
     await client.startClient({ initialSyncLimit: 10 });
 
     // Wait for initial sync
-    await new Promise((resolve) => {
+    console.log('Waiting for sync...');
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Sync timeout')), 30000);
       client.once('sync', (state) => {
-        if (state === 'PREPARED') resolve();
+        if (state === 'PREPARED') {
+          clearTimeout(timeout);
+          resolve();
+        }
       });
     });
 
+    console.log('Matrix client initialized successfully');
     return client;
   } catch (error) {
-    console.error('Error initializing Matrix client:', error);
+    console.error('Detailed error in Matrix client initialization:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     throw error;
   }
 };
@@ -525,7 +553,6 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error('Room not found');
     }
 
-    // Ensure room is joined
     const membership = room.getMyMembership();
     if (membership !== 'join') {
       throw new Error(`Cannot send message - room membership is ${membership}`);
@@ -534,14 +561,12 @@ export const sendMessage = async (client, roomId, content) => {
     const isEncrypted = room.getDefaultEncryption();
     const txnId = `m${Date.now()}`;
 
+    let response;
     if (isEncrypted) {
-      // Ensure encryption is ready
+      // Ensure encryption is ready for the room
       await client.crypto.ensureEncryptionReadiness(room);
       
-      // Wait for room members to be loaded
-      await client.downloadKeys(room.getJoinedMembers().map(m => m.userId));
-      
-      const response = await client.sendEvent(
+      response = await client.sendEvent(
         roomId,
         'm.room.message',
         {
@@ -550,28 +575,20 @@ export const sendMessage = async (client, roomId, content) => {
         },
         txnId
       );
-
-      return {
-        eventId: response.event_id,
-        content,
-        sender: client.getUserId(),
-        timestamp: new Date().getTime(),
-        type: 'm.room.message'
-      };
     } else {
-      const response = await client.sendMessage(roomId, {
+      response = await client.sendMessage(roomId, {
         msgtype: 'm.text',
         body: content
       });
-
-      return {
-        eventId: response.event_id,
-        content,
-        sender: client.getUserId(),
-        timestamp: new Date().getTime(),
-        type: 'm.room.message'
-      };
     }
+
+    return {
+      eventId: response.event_id,
+      content,
+      sender: client.getUserId(),
+      timestamp: new Date().getTime(),
+      type: 'm.room.message'
+    };
   } catch (error) {
     console.error('Detailed error in sendMessage:', {
       error: error.message,
