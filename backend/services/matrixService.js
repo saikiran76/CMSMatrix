@@ -1,4 +1,7 @@
-import sdk from 'matrix-js-sdk';
+import * as sdk from 'matrix-js-sdk';
+import { createClient } from 'matrix-js-sdk';
+import { NodeCryptoStore } from './matrixCryptoStore.js';
+import * as Olm from '@matrix-org/olm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { RateLimiter } from 'limiter';
 import { getCachedAnalysis, setCachedAnalysis } from './cacheService.js';
@@ -16,44 +19,45 @@ const limiter = new RateLimiter({
 
 export const initializeMatrixClient = async () => {
   try {
-    if (matrixClient) {
-      return matrixClient;
-    }
-
-    console.log('Initializing Matrix client...');
+    // Initialize Olm
+    await global.Olm.init();
     
-    matrixClient = sdk.createClient({
-      baseUrl: "https://matrix.org",
+    const cryptoStore = new NodeCryptoStore();
+    
+    const client = createClient({
+      baseUrl: process.env.MATRIX_HOME_SERVER,
       accessToken: process.env.MATRIX_ACCESS_TOKEN,
       userId: process.env.MATRIX_USER_ID,
-      useAuthorizationHeader: true,
-      timeoutMs: 60000, // Increase timeout to 60 seconds
+      deviceId: process.env.MATRIX_DEVICE_ID,
+      cryptoStore,
+      sessionStore: new sdk.WebStorageSessionStore(new sdk.MemoryStore()),
+      cryptoCallbacks: {
+        getCrossSigningKey: async (type) => {
+          return null; // Implement if needed
+        },
+        saveCrossSigningKeys: async (keys) => {
+          // Implement if needed
+        }
+      },
+      verificationMethods: ['m.sas.v1'],
+      timelineSupport: true
     });
 
-    // Start client with limited sync
-    await matrixClient.startClient({
-      initialSyncLimit: 10,
-      lazyLoadMembers: true,
+    // Initialize crypto
+    await client.initCrypto();
+    await client.enableE2eEncryption();
+    await client.startClient({ initialSyncLimit: 10 });
+
+    // Wait for initial sync
+    await new Promise((resolve) => {
+      client.once('sync', (state) => {
+        if (state === 'PREPARED') resolve();
+      });
     });
 
-    // Wait for initial sync with timeout
-    await Promise.race([
-      new Promise((resolve) => {
-        matrixClient.once('sync', (state) => {
-          if (state === 'PREPARED') {
-            console.log('Matrix client sync completed');
-            resolve();
-          }
-        });
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Matrix sync timeout')), 30000)
-      )
-    ]);
-
-    return matrixClient;
+    return client;
   } catch (error) {
-    console.error('Matrix client initialization failed:', error);
+    console.error('Error initializing Matrix client:', error);
     throw error;
   }
 };
@@ -533,27 +537,47 @@ export const sendMessage = async (client, roomId, content) => {
       throw new Error(`Cannot send message - room membership is ${membership}`);
     }
 
-    // Generate unique transaction ID
+    const isEncrypted = room.getDefaultEncryption();
     const txnId = `m${Date.now()}`;
 
-    // Send message using Matrix client's sendEvent method
-    const response = await client.sendEvent(
-      roomId,
-      'm.room.message',
-      {
+    if (isEncrypted) {
+      // Ensure encryption is ready
+      await client.crypto.ensureEncryptionReadiness(room);
+      
+      // Wait for room members to be loaded
+      await client.downloadKeys(room.getJoinedMembers().map(m => m.userId));
+      
+      const response = await client.sendEvent(
+        roomId,
+        'm.room.message',
+        {
+          msgtype: 'm.text',
+          body: content
+        },
+        txnId
+      );
+
+      return {
+        eventId: response.event_id,
+        content,
+        sender: client.getUserId(),
+        timestamp: new Date().getTime(),
+        type: 'm.room.message'
+      };
+    } else {
+      const response = await client.sendMessage(roomId, {
         msgtype: 'm.text',
         body: content
-      },
-      txnId
-    );
+      });
 
-    return {
-      eventId: response.event_id,
-      content,
-      sender: client.getUserId(),
-      timestamp: new Date().getTime(),
-      type: 'm.room.message'
-    };
+      return {
+        eventId: response.event_id,
+        content,
+        sender: client.getUserId(),
+        timestamp: new Date().getTime(),
+        type: 'm.room.message'
+      };
+    }
   } catch (error) {
     console.error('Detailed error in sendMessage:', {
       error: error.message,
