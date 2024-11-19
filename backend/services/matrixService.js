@@ -29,25 +29,21 @@ export const initializeMatrixClient = async () => {
     await Olm.init();
     const cryptoStore = new NodeCryptoStore();
     
-    // Create a simple in-memory session store
-    const sessionStore = {
-      getItem: (key) => sessionStore[key],
-      setItem: (key, value) => { sessionStore[key] = value; },
-      removeItem: (key) => { delete sessionStore[key]; },
-      clear: () => { Object.keys(sessionStore).forEach(key => delete sessionStore[key]); }
-    };
+    // Ensure baseUrl ends with a trailing slash
+    const baseUrl = process.env.MATRIX_HOME_SERVER.endsWith('/')
+      ? process.env.MATRIX_HOME_SERVER
+      : `${process.env.MATRIX_HOME_SERVER}/`;
 
     const client = createClient({
-      baseUrl: process.env.MATRIX_HOME_SERVER,
+      baseUrl,
       accessToken: process.env.MATRIX_ACCESS_TOKEN,
       userId: process.env.MATRIX_USER_ID,
       deviceId: process.env.MATRIX_DEVICE_ID || `MATRIX_DEVICE_${Date.now()}`,
       cryptoStore,
       store: new sdk.MemoryStore(),
+      sessionStore: cryptoStore, // Use cryptoStore as sessionStore
       useAuthorizationHeader: true,
       timelineSupport: true,
-      verificationMethods: [],
-      fallbackICEServerAllowed: false,
       cryptoCallbacks: {
         getCrossSigningKey: async () => null,
         saveCrossSigningKeys: async () => {},
@@ -55,11 +51,13 @@ export const initializeMatrixClient = async () => {
       }
     });
 
-    console.log('Starting client...');
-    await client.startClient({ initialSyncLimit: 10 });
+    // Initialize crypto before starting client
+    await client.initCrypto();
+    console.log('Crypto initialized successfully');
 
-    // Wait for initial sync with better error handling
-    console.log('Waiting for sync...');
+    await client.startClient({ initialSyncLimit: 10 });
+    console.log('Client started successfully');
+
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         client.removeAllListeners('sync');
@@ -76,11 +74,7 @@ export const initializeMatrixClient = async () => {
 
     return client;
   } catch (error) {
-    console.error('Detailed error in Matrix client initialization:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
+    console.error('Matrix client initialization error:', error);
     throw error;
   }
 };

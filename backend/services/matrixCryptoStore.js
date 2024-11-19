@@ -10,16 +10,44 @@ export class NodeCryptoStore extends MemoryCryptoStore {
     return await func(this);
   }
 
+  getItem(key) {
+    return this.store.get(key);
+  }
+
+  setItem(key, value) {
+    this.store.set(key, value);
+  }
+
+  removeItem(key) {
+    this.store.delete(key);
+  }
+
   getEndToEndDeviceData() {
-    return this.store.get('deviceData') || null;
+    return this.store.get('deviceData');
   }
 
   setEndToEndDeviceData(deviceData) {
     this.store.set('deviceData', deviceData);
   }
 
+  getEndToEndRoomKeyBackup() {
+    return this.store.get('roomKeyBackup');
+  }
+
+  setEndToEndRoomKeyBackup(roomKeyBackup) {
+    this.store.set('roomKeyBackup', roomKeyBackup);
+  }
+
+  getDeviceData() {
+    return this.store.get('deviceData');
+  }
+
+  setDeviceData(data) {
+    this.store.set('deviceData', data);
+  }
+
   getSessionBackupPrivateKey() {
-    return this.store.get('backupKey') || null;
+    return this.store.get('backupKey');
   }
 
   setSessionBackupPrivateKey(key) {
