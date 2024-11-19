@@ -1,10 +1,13 @@
 import * as sdk from 'matrix-js-sdk';
 import { createClient } from 'matrix-js-sdk';
 import { NodeCryptoStore } from './matrixCryptoStore.js';
-import * as Olm from '@matrix-org/olm';
+import Olm from '@matrix-org/olm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { RateLimiter } from 'limiter';
 import { getCachedAnalysis, setCachedAnalysis } from './cacheService.js';
+
+// Initialize Olm globally
+global.Olm = Olm;
 
 let matrixClient = null;
 
@@ -20,7 +23,7 @@ const limiter = new RateLimiter({
 export const initializeMatrixClient = async () => {
   try {
     // Initialize Olm
-    await global.Olm.init();
+    await Olm.init();
     
     const cryptoStore = new NodeCryptoStore();
     
@@ -31,21 +34,12 @@ export const initializeMatrixClient = async () => {
       deviceId: process.env.MATRIX_DEVICE_ID,
       cryptoStore,
       sessionStore: new sdk.WebStorageSessionStore(new sdk.MemoryStore()),
-      cryptoCallbacks: {
-        getCrossSigningKey: async (type) => {
-          return null; // Implement if needed
-        },
-        saveCrossSigningKeys: async (keys) => {
-          // Implement if needed
-        }
-      },
       verificationMethods: ['m.sas.v1'],
       timelineSupport: true
     });
 
     // Initialize crypto
     await client.initCrypto();
-    await client.enableE2eEncryption();
     await client.startClient({ initialSyncLimit: 10 });
 
     // Wait for initial sync
