@@ -560,7 +560,7 @@ export const sendMessage = async (client, roomId, content) => {
       for (const member of members) {
         const devices = await client.getStoredDevicesForUser(member.userId);
         for (const device of devices) {
-          await client.setDeviceTrust(member.userId, device.deviceId, true, true);
+          await client.setDeviceVerified(member.userId, device.deviceId);
         }
       }
 
