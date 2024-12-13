@@ -12,7 +12,12 @@ router.use(authenticateToken);
 router.get('/channels', async (req, res) => {
   try {
     const slack = getSlackClient();
-    const response = await slack.conversations.list({ limit: 100 });
+    const response = await slack.conversations.list({
+      limit: 100,
+      types: 'public_channel,private_channel'
+    });
+    console.log('Full Slack response:', JSON.stringify(response, null, 2));
+    
     if (!response.ok) {
       throw new Error('Failed to fetch Slack channels');
     }
@@ -28,14 +33,13 @@ router.get('/channels', async (req, res) => {
       name: ch.name,
       isMember: ch.is_member,
       created: new Date(ch.created * 1000),
-      isActive: true, // Slack doesn't have the same active concept, defaulting true
+      isActive: true,
       memberCount: ch.num_members || 0
     }));
 
-    // In Dashboard.jsx after fetching
-    console.log('Slack channels:', response.data);
+    console.log('Slack channels:', channels);
 
-
+    // Return the normalized channels array
     res.json(channels);
   } catch (error) {
     console.error('Error fetching Slack channels:', error);
@@ -60,20 +64,15 @@ router.get('/channels/:channelId/messages', async (req, res) => {
       throw new Error('Failed to fetch Slack messages');
     }
 
-    // Slack messages structure: { text, user, ts }
-    // Normalize to a structure similar to Matrix messages
     const messages = (response.messages || []).map(msg => {
-      // Convert ts to a proper timestamp
       const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
 
-      // Priority calculation (reusing existing logic)
-      // We wrap message in an object with getContent/getSender/getDate to fit our existing function
       const pseudoEvent = {
         getContent: () => ({ body: msg.text }),
         getSender: () => msg.user || 'unknown_user',
         getDate: () => new Date(timestamp)
       };
-      const priority = calculateMessagePriority(pseudoEvent, { timeline: [] }); // room not relevant here, pass empty
+      const priority = calculateMessagePriority(pseudoEvent, { timeline: [] });
 
       return {
         id: msg.ts,
@@ -83,7 +82,7 @@ router.get('/channels/:channelId/messages', async (req, res) => {
         timestamp: timestamp,
         priority
       };
-    }).reverse(); // Slack returns messages newest first, reverse to oldest first if needed
+    }).reverse();
 
     res.json({ messages, channelId });
   } catch (error) {
@@ -112,7 +111,6 @@ router.post('/channels/:channelId/messages', async (req, res) => {
       throw new Error('Failed to send Slack message');
     }
 
-    // Construct a message object to return
     const timestamp = Math.floor(parseFloat(response.ts) * 1000);
     const pseudoEvent = {
       getContent: () => ({ body: content }),
@@ -140,7 +138,6 @@ router.get('/channels/:channelId/summary', async (req, res) => {
     const { channelId } = req.params;
     const slack = getSlackClient();
 
-    // Fetch recent messages
     const messageResponse = await slack.conversations.history({
       channel: channelId,
       limit: 50
@@ -162,7 +159,6 @@ router.get('/channels/:channelId/summary', async (req, res) => {
       };
     });
 
-    // AI analysis logic reused from matrix
     const keyTopics = [...new Set(messages.flatMap(m => m.getContent().body.toLowerCase().split(/\W+/)))].slice(0,5);
     const priorityBreakdown = {
       high: messages.filter(m => calculateMessagePriority(m, { timeline: [] }) === 'high').length,

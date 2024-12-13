@@ -20,14 +20,14 @@ const Dashboard = ({ user }) => {
       try {
         setIsLoading(true);
         setError(null);
-
-        if (selectedView === 'chats') {
-          const response = await axios.get('/rooms');
-          setRooms(response.data);
-        } else if (selectedView === 'slack') {
-          // Fetch Slack channels instead of rooms
+  
+        if (selectedView === 'slack') {
           const response = await axios.get('/slack/channels');
-          setRooms(response.data); // reuse rooms state to store channels for simplicity
+          console.log('Slack channels in frontend:', response.data);
+          setRooms(response.data); // This sets the rooms state to the list of Slack channels
+        } else if (selectedView === 'chats') {
+          const response = await axios.get('/rooms');
+          setRooms(response.data); // matrix rooms
         }
       } catch (error) {
         console.error('Dashboard initialization failed:', error);
@@ -36,9 +36,10 @@ const Dashboard = ({ user }) => {
         setIsLoading(false);
       }
     };
-
+  
     initializeDashboard();
   }, [selectedView]);
+  
 
 
   // Define renderRoomContent function
@@ -65,7 +66,9 @@ const Dashboard = ({ user }) => {
       case 'summary':
         return <ConversationSummary roomId={selectedRoom} selectedView={selectedView} />;
       case 'details':
-        return <CustomerDetails roomId={selectedRoom} selectedView={selectedView} />;
+        return selectedView === 'slack'
+        ? <div>No customer details for Slack channels</div>
+        : <CustomerDetails roomId={selectedRoom} selectedView={selectedView} />;
       default:
         return null;
     }
@@ -88,14 +91,15 @@ const Dashboard = ({ user }) => {
               rooms={rooms}
             /> */}
             <ChatList
-              onSelectRoom={(roomId) => {
-                setSelectedRoom(roomId);
+              rooms={rooms}
+              selectedRoom={selectedRoom}
+              selectedView={selectedView}
+              onSelectRoom={(id) => {
+                setSelectedRoom(id);
                 setActiveComponent('messages');
               }}
-              selectedRoom={selectedRoom}
-              rooms={rooms}
-              selectedView={selectedView} // new prop
             />
+
 
           </div>
 
@@ -164,6 +168,51 @@ const Dashboard = ({ user }) => {
         </div>
       );
     }
+
+    if (selectedView === 'slack') {
+      // Similar logic for Slack channels
+      return (
+        <div className="flex h-full">
+          <div className={`${selectedRoom ? 'w-1/3' : 'w-full'} border-r border-dark-lighter`}>
+            <ChatList
+              onSelectRoom={(roomId) => {
+                setSelectedRoom(roomId);
+                setActiveComponent('messages');
+              }}
+              selectedRoom={selectedRoom}
+              rooms={rooms} // This is Slack channels now
+              selectedView={selectedView}
+            />
+          </div>
+          {selectedRoom && (
+            <div className="w-2/3 flex flex-col">
+              {/* Tab Navigation for Slack */}
+              <div className="flex border-b border-dark-lighter">
+                <button
+                  onClick={() => setActiveComponent('messages')}
+                  className={activeComponent === 'messages' ? 'text-primary' : 'text-gray-400'}
+                >
+                  Messages
+                </button>
+                <button
+                  onClick={() => setActiveComponent('summary')}
+                  className={activeComponent === 'summary' ? 'text-primary' : 'text-gray-400'}
+                >
+                  Summary
+                </button>
+                {/* Skip details tab for Slack if you have no equivalent */}
+              </div>
+  
+              <div className="flex-1 overflow-auto p-6">
+                {renderRoomContent()}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+  
+    
 
     return null;
   };
