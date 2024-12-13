@@ -4,9 +4,12 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 import { initializeMatrixClient } from './services/matrixService.js';
+import { initializeSlackClient } from './services/slackService.js';
+
 import authRoutes from './routes/authRoutes.js';
 import roomRoutes from './routes/roomRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import slackRoutes from './routes/slackRoutes.js'
 import { errorHandler } from './middleware/errorHandler.js';
 dotenv.config();
 
@@ -14,8 +17,17 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
+// app.use(cors({
+//   origin: ['http://localhost:5173', 'https://cms-matrix.vercel.app'],
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+//   exposedHeaders: ['Set-Cookie'],
+//   preflightContinue: false,
+//   optionsSuccessStatus: 204
+// }));
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://cms-matrix.vercel.app'],
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'https://cms-matrix.vercel.app', 'https://cmsmatrix.onrender.com'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
@@ -23,6 +35,7 @@ app.use(cors({
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -59,6 +72,11 @@ const initializeMatrix = async () => {
   }
 };
 
+const initializeSlack = async () => {
+  const client = await initializeSlackClient();
+  app.locals.slackClient = client;
+};
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -78,6 +96,7 @@ app.options('*', cors());
 app.use('/auth', authRoutes);
 app.use('/rooms', roomRoutes);
 app.use('/admin', adminRoutes);
+app.use('/slack', slackRoutes);
 
 // Error handling
 app.use(errorHandler);
@@ -87,11 +106,13 @@ const startServer = async () => {
   try {
     await connectDB();
     await initializeMatrix();
+    await initializeSlack()
     
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log('MongoDB connected');
       console.log('Matrix client initialized');
+      console.log('Slack client initialized');
     });
   } catch (error) {
     console.error('Server startup error:', error);

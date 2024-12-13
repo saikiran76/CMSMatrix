@@ -3,7 +3,7 @@ import axios from '../utils/axios';
 import PriorityFilter from './PriorityFilter';
 import ResponseSuggestions from './ResponseSuggestions';
 
-const MessageViewer = ({ roomId }) => {
+const MessageViewer = ({ roomId, selectedView }) => {
   const [messages, setMessages] = useState([]);
   const [selectedPriorities, setSelectedPriorities] = useState(['high', 'medium', 'low']);
   const [loading, setLoading] = useState(true);
@@ -40,10 +40,15 @@ const MessageViewer = ({ roomId }) => {
   };
 
   const handleSendMessage = async (content) => {
+    if (!content.trim()) return;
     try {
-      const response = await axios.post(`/rooms/${encodeURIComponent(roomId)}/messages`, {
+      const sendEndpoint = selectedView === 'slack'
+        ? `/slack/channels/${encodeURIComponent(roomId)}/messages`
+        : `/rooms/${encodeURIComponent(roomId)}/messages`;
+
+      const response = await axios.post(sendEndpoint, {
         content,
-        priority: 'medium' // Default priority
+        priority: 'medium' // Default priority, though not used by Slack endpoint directly
       });
 
       setMessages(prev => [...prev, response.data]);
@@ -51,7 +56,7 @@ const MessageViewer = ({ roomId }) => {
       scrollToBottom();
     } catch (error) {
       console.error('Error sending message:', error);
-      // Show error notification
+      // You might show a notification or handle the error gracefully
     }
   };
 
@@ -65,10 +70,12 @@ const MessageViewer = ({ roomId }) => {
         setLoading(true);
         setError(null);
 
-        const response = await axios.get(`/rooms/${encodeURIComponent(roomId)}/messages`, {
+        const endpoint = selectedView === 'slack'
+          ? `/slack/channels/${encodeURIComponent(roomId)}/messages?limit=50`
+          : `/rooms/${encodeURIComponent(roomId)}/messages?limit=50`;
+
+        const response = await axios.get(endpoint, {
           timeout: 10000, // 10 second timeout
-          retries: 3,
-          retryDelay: 1000
         });
 
         if (response.data.messages && Array.isArray(response.data.messages)) {
@@ -91,7 +98,7 @@ const MessageViewer = ({ roomId }) => {
     if (roomId) {
       fetchMessages();
     }
-  }, [roomId, retryCount]);
+  }, [roomId, retryCount, selectedView]);
 
   if (error) {
     return (
@@ -159,10 +166,11 @@ const MessageViewer = ({ roomId }) => {
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-sm text-gray-300">{message.senderName}</span>
-                  <span className="text-xs px-2 py-1 rounded-full bg-opacity-20 
-                    ${message.priority === 'high' ? 'bg-red-500 text-red-200' : 
-                      message.priority === 'medium' ? 'bg-yellow-500 text-yellow-200' : 
-                      'bg-gray-500 text-gray-200'}">
+                  <span className={`text-xs px-2 py-1 rounded-full bg-opacity-20 ${
+                    message.priority === 'high' ? 'bg-red-500 text-red-200' : 
+                    message.priority === 'medium' ? 'bg-yellow-500 text-yellow-200' : 
+                    'bg-gray-500 text-gray-200'
+                  }`}>
                     {message.priority}
                   </span>
                 </div>
@@ -179,7 +187,7 @@ const MessageViewer = ({ roomId }) => {
       {selectedMessage && (
         <div className="border-t border-dark-lighter">
           <ResponseSuggestions
-            message={selectedMessage}
+            message={selectedMessage.content}
             onSelectSuggestion={handleSuggestionSelect}
           />
         </div>

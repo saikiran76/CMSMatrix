@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../utils/axios';
 
-const ConversationSummary = ({ roomId }) => {
+const ConversationSummary = ({ roomId, selectedView }) => {
   const [summary, setSummary] = useState(null);
   const [aiInsights, setAiInsights] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,13 +16,50 @@ const ConversationSummary = ({ roomId }) => {
         setLoading(true);
         setError(null);
 
-        // Fetch regular summary
-        const summaryResponse = await axios.get(`/rooms/${encodeURIComponent(roomId)}/summary`);
-        setSummary(summaryResponse.data);
+        if (selectedView === 'chats') {
+          // Matrix endpoints
+          const summaryResponse = await axios.get(`/rooms/${encodeURIComponent(roomId)}/summary`);
+          setSummary(summaryResponse.data);
 
-        // Fetch AI-powered conversation summary
-        const aiResponse = await axios.get(`/rooms/${encodeURIComponent(roomId)}/conversation-summary`);
-        setAiInsights(aiResponse.data);
+          // Fetch AI-powered conversation summary
+          const aiResponse = await axios.get(`/rooms/${encodeURIComponent(roomId)}/conversation-summary`);
+          setAiInsights(aiResponse.data);
+
+        } else if (selectedView === 'slack') {
+          // Slack endpoint that returns combined summary and AI-like data
+          const summaryResponse = await axios.get(`/slack/channels/${encodeURIComponent(roomId)}/summary`);
+          
+          // We assume Slack summary returns a structure like:
+          // {
+          //   messageCount: number,
+          //   keyTopics: string[],
+          //   priorityBreakdown: {high:number,medium:number,low:number},
+          //   sentimentAnalysis: {positive:number,negative:number,neutral:number},
+          //   categories: { [category]: number }
+          // }
+          //
+          // Slack doesn't have a separate AI endpoint, so we treat this as both summary and AI data.
+          const slackData = summaryResponse.data;
+          setSummary({
+            roomName: `Slack Channel: ${roomId}`,
+            created: new Date().toISOString(),
+            memberCount: 0, // Slack endpoint might not return this, you can enhance if needed
+            status: 'active', // Slack doesn't have a status concept, assume active
+            totalMessages: slackData.messageCount,
+            activeParticipants: 0,
+            lastContact: null,
+            recentActivity: [] // Slack endpoint may not return recent messages here, if needed adjust backend
+          });
+
+          // For Slack, we directly use slackData for AI insights
+          setAiInsights({
+            keyTopics: slackData.keyTopics,
+            priorityBreakdown: slackData.priorityBreakdown,
+            sentimentAnalysis: slackData.sentimentAnalysis,
+            categories: slackData.categories
+          });
+        }
+
       } catch (error) {
         console.error('Error fetching data:', error);
         setError(error.response?.data?.error || 'Failed to load conversation data');
@@ -32,7 +69,7 @@ const ConversationSummary = ({ roomId }) => {
     };
 
     fetchData();
-  }, [roomId, retryCount]);
+  }, [roomId, retryCount, selectedView]);
 
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);
@@ -72,13 +109,17 @@ const ConversationSummary = ({ roomId }) => {
 
   if (!summary) return null;
 
+  // aiInsights might be null if something went wrong, handle gracefully
+  const ai = aiInsights || {};
+
   return (
     <div className="p-6 space-y-6">
+      {/* Room/Channel Information */}
       <div className="bg-dark-lighter rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4">Room Information</h2>
+        <h2 className="text-xl font-semibold mb-4">{selectedView === 'slack' ? 'Channel Information' : 'Room Information'}</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-gray-400">Room Name</p>
+            <p className="text-gray-400">{selectedView === 'slack' ? 'Channel Name' : 'Room Name'}</p>
             <p className="text-lg font-medium">{summary.roomName}</p>
           </div>
           <div>
@@ -109,7 +150,7 @@ const ConversationSummary = ({ roomId }) => {
           </div>
           <div>
             <p className="text-gray-400">Active Participants</p>
-            <p className="text-2xl font-bold">{summary.activeParticipants}</p>
+            <p className="text-2xl font-bold">{summary.activeParticipants || 0}</p>
           </div>
           <div>
             <p className="text-gray-400">Last Contact</p>
@@ -122,64 +163,72 @@ const ConversationSummary = ({ roomId }) => {
         </div>
       </div>
 
-      {aiInsights && (
+      {ai.keyTopics && (
         <div className="bg-dark-lighter rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">AI Analysis</h2>
           
-          <div className="mb-6">
-            <h3 className="text-lg font-medium mb-2">Priority Distribution</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {Object.entries(aiInsights.priorityBreakdown).map(([priority, count]) => (
-                <div key={priority} className={`p-3 rounded-lg ${
-                  priority === 'high' ? 'bg-red-500/20' :
-                  priority === 'medium' ? 'bg-yellow-500/20' :
-                  'bg-green-500/20'
-                }`}>
-                  <p className="text-sm text-gray-400">{priority.toUpperCase()}</p>
-                  <p className="text-2xl font-bold">{count}</p>
-                </div>
-              ))}
+          {ai.priorityBreakdown && (
+            <div className="mb-6">
+              <h3 className="text-lg font-medium mb-2">Priority Distribution</h3>
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(ai.priorityBreakdown).map(([priority, count]) => (
+                  <div key={priority} className={`p-3 rounded-lg ${
+                    priority === 'high' ? 'bg-red-500/20' :
+                    priority === 'medium' ? 'bg-yellow-500/20' :
+                    'bg-green-500/20'
+                  }`}>
+                    <p className="text-sm text-gray-400">{priority.toUpperCase()}</p>
+                    <p className="text-2xl font-bold">{count}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="mb-6">
-            <h3 className="text-lg font-medium mb-2">Key Topics</h3>
-            <div className="flex flex-wrap gap-2">
-              {aiInsights.keyTopics.map((topic, index) => (
-                <span key={index} className="px-3 py-1 bg-primary/20 rounded-full text-sm">
-                  {topic}
-                </span>
-              ))}
+          {ai.keyTopics && (
+            <div className="mb-6">
+              <h3 className="text-lg font-medium mb-2">Key Topics</h3>
+              <div className="flex flex-wrap gap-2">
+                {ai.keyTopics.map((topic, index) => (
+                  <span key={index} className="px-3 py-1 bg-primary/20 rounded-full text-sm">
+                    {topic}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="mb-6">
-            <h3 className="text-lg font-medium mb-2">Sentiment Analysis</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {Object.entries(aiInsights.sentimentAnalysis).map(([sentiment, count]) => (
-                <div key={sentiment} className="text-center">
-                  <p className="text-sm text-gray-400">{sentiment.toUpperCase()}</p>
-                  <p className="text-xl font-bold">{count}</p>
-                </div>
-              ))}
+          {ai.sentimentAnalysis && (
+            <div className="mb-6">
+              <h3 className="text-lg font-medium mb-2">Sentiment Analysis</h3>
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(ai.sentimentAnalysis).map(([sentiment, count]) => (
+                  <div key={sentiment} className="text-center">
+                    <p className="text-sm text-gray-400">{sentiment.toUpperCase()}</p>
+                    <p className="text-xl font-bold">{count}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div>
-            <h3 className="text-lg font-medium mb-2">Message Categories</h3>
-            <div className="grid grid-cols-2 gap-4">
-              {Object.entries(aiInsights.categories).map(([category, count]) => (
-                <div key={category} className="flex justify-between items-center p-2 bg-dark rounded-lg">
-                  <span className="text-gray-300">{category}</span>
-                  <span className="font-medium">{count}</span>
-                </div>
-              ))}
+          {ai.categories && (
+            <div>
+              <h3 className="text-lg font-medium mb-2">Message Categories</h3>
+              <div className="grid grid-cols-2 gap-4">
+                {Object.entries(ai.categories).map(([category, count]) => (
+                  <div key={category} className="flex justify-between items-center p-2 bg-dark rounded-lg">
+                    <span className="text-gray-300">{category}</span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {summary.recentActivity?.length > 0 && (
+      {summary.recentActivity && summary.recentActivity.length > 0 && (
         <div className="bg-dark-lighter rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">Recent Messages</h2>
           <div className="space-y-4">

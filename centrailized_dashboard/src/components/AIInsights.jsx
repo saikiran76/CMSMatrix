@@ -57,4 +57,4 @@ const AIInsights = ({ summary }) => {
         </div>
       </div>
     );
-  };z
+  };

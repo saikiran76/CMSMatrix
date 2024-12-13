@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import axios from '../utils/axios';
 import { FiRefreshCw } from 'react-icons/fi';
 
-const ChatList = ({ onSelectRoom }) => {
+const ChatList = ({ onSelectRoom, selectedView }) => {
   const [chats, setChats] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,8 +48,12 @@ const ChatList = ({ onSelectRoom }) => {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">Active Rooms</h2>
-        <button 
+        {/* <h2 className="text-xl font-semibold">Active Rooms</h2> */}
+        <h2 className="text-xl font-semibold">
+          {selectedView === 'slack' ? 'Slack Channels' : 'Active Rooms'}
+        </h2>
+
+        <button
           onClick={fetchRooms}
           className="btn-primary flex items-center gap-2"
         >
@@ -71,7 +75,7 @@ const ChatList = ({ onSelectRoom }) => {
           </thead>
           <tbody>
             {chats.map(chat => (
-              <tr 
+              <tr
                 key={chat.id}
                 onClick={() => onSelectRoom(chat.id)}
                 className="border-b border-dark-lighter hover:bg-dark-lighter cursor-pointer transition-colors"
@@ -84,9 +88,8 @@ const ChatList = ({ onSelectRoom }) => {
                 </td>
                 <td className="py-4 px-6 text-gray-400">{chat.lastMessage}</td>
                 <td className="py-4 px-6">
-                  <span className={`px-2 py-1 rounded-full text-sm ${
-                    chat.status === 'active' ? 'bg-success/20 text-success' : 'bg-error/20 text-error'
-                  }`}>
+                  <span className={`px-2 py-1 rounded-full text-sm ${chat.status === 'active' ? 'bg-success/20 text-success' : 'bg-error/20 text-error'
+                    }`}>
                     {chat.status}
                   </span>
                 </td>

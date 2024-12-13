@@ -23,8 +23,11 @@ const Dashboard = ({ user }) => {
 
         if (selectedView === 'chats') {
           const response = await axios.get('/rooms');
-          console.log('Rooms data:', response.data);
           setRooms(response.data);
+        } else if (selectedView === 'slack') {
+          // Fetch Slack channels instead of rooms
+          const response = await axios.get('/slack/channels');
+          setRooms(response.data); // reuse rooms state to store channels for simplicity
         }
       } catch (error) {
         console.error('Dashboard initialization failed:', error);
@@ -37,21 +40,37 @@ const Dashboard = ({ user }) => {
     initializeDashboard();
   }, [selectedView]);
 
+
   // Define renderRoomContent function
+  // const renderRoomContent = () => {
+  //   if (!selectedRoom) return null;
+
+  //   switch (activeComponent) {
+  //     case 'messages':
+  //       return <MessageViewer roomId={selectedRoom} />;
+  //     case 'summary':
+  //       return <ConversationSummary roomId={selectedRoom} />;
+  //     case 'details':
+  //       return <CustomerDetails roomId={selectedRoom} />;
+  //     default:
+  //       return null;
+  //   }
+  // };
   const renderRoomContent = () => {
     if (!selectedRoom) return null;
-
+  
     switch (activeComponent) {
       case 'messages':
-        return <MessageViewer roomId={selectedRoom} />;
+        return <MessageViewer roomId={selectedRoom} selectedView={selectedView} />;
       case 'summary':
-        return <ConversationSummary roomId={selectedRoom} />;
+        return <ConversationSummary roomId={selectedRoom} selectedView={selectedView} />;
       case 'details':
-        return <CustomerDetails roomId={selectedRoom} />;
+        return <CustomerDetails roomId={selectedRoom} selectedView={selectedView} />;
       default:
         return null;
     }
   };
+  
 
   // Define renderMainContent function
   const renderMainContent = () => {
@@ -60,14 +79,24 @@ const Dashboard = ({ user }) => {
         <div className="flex h-full">
           {/* Left Panel - Chat List */}
           <div className={`${selectedRoom ? 'w-1/3' : 'w-full'} border-r border-dark-lighter`}>
-            <ChatList 
+            {/* <ChatList 
               onSelectRoom={(roomId) => {
                 setSelectedRoom(roomId);
                 setActiveComponent('messages');
               }}
               selectedRoom={selectedRoom}
               rooms={rooms}
+            /> */}
+            <ChatList
+              onSelectRoom={(roomId) => {
+                setSelectedRoom(roomId);
+                setActiveComponent('messages');
+              }}
+              selectedRoom={selectedRoom}
+              rooms={rooms}
+              selectedView={selectedView} // new prop
             />
+
           </div>
 
           {/* Right Panel - Room Details */}
@@ -77,31 +106,28 @@ const Dashboard = ({ user }) => {
               <div className="flex border-b border-dark-lighter">
                 <button
                   onClick={() => setActiveComponent('messages')}
-                  className={`px-6 py-3 text-sm font-medium ${
-                    activeComponent === 'messages'
+                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'messages'
                       ? 'border-b-2 border-primary text-primary'
                       : 'text-gray-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Messages
                 </button>
                 <button
                   onClick={() => setActiveComponent('summary')}
-                  className={`px-6 py-3 text-sm font-medium ${
-                    activeComponent === 'summary'
+                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'summary'
                       ? 'border-b-2 border-primary text-primary'
                       : 'text-gray-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Summary
                 </button>
                 <button
                   onClick={() => setActiveComponent('details')}
-                  className={`px-6 py-3 text-sm font-medium ${
-                    activeComponent === 'details'
+                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'details'
                       ? 'border-b-2 border-primary text-primary'
                       : 'text-gray-400 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Customer Details
                 </button>
@@ -156,8 +182,8 @@ const Dashboard = ({ user }) => {
         <div className="text-center">
           <h2 className="text-xl font-bold mb-2">Error</h2>
           <p className="text-gray-400 mb-4">{error}</p>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             className="px-4 py-2 bg-primary text-white rounded"
           >
             Retry
@@ -169,7 +195,7 @@ const Dashboard = ({ user }) => {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar 
+      <Sidebar
         selectedView={selectedView}
         onViewChange={(view) => {
           setSelectedView(view);
@@ -182,7 +208,7 @@ const Dashboard = ({ user }) => {
         <div className="h-full flex flex-col">
           <header className="bg-dark-lighter px-6 py-4 flex items-center justify-between">
             <h1 className="text-xl font-semibold">
-              {selectedRoom 
+              {selectedRoom
                 ? `Room ${selectedRoom} - ${activeComponent.charAt(0).toUpperCase() + activeComponent.slice(1)}`
                 : selectedView.charAt(0).toUpperCase() + selectedView.slice(1)
               }
