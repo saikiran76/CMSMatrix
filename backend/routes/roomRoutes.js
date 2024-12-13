@@ -208,10 +208,11 @@ router.get('/debug/client', authenticateToken, (req, res) => {
   });
 });
 
+// Example snippet for matrix message sending route (assuming something like '/rooms/:roomId/messages')
 router.post('/:roomId/messages', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { content } = req.body;
+    const { content, priority } = req.body;
     const client = req.app.locals.matrixClient;
 
     if (!client) {
@@ -222,48 +223,42 @@ router.post('/:roomId/messages', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    // Ensure client is ready
-    if (!client.isInitialSyncComplete()) {
-      console.log('Waiting for sync completion...');
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Sync timeout')), 10000);
-        client.once('sync', (state) => {
-          if (state === 'PREPARED') {
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
-      });
-    }
+    // No recalculation of priority, use user-provided priority or default 'medium'
+    const finalPriority = priority || 'medium';
 
-    console.log('Sending message to room:', roomId);
-    const message = await sendMessage(client, decodeURIComponent(roomId), content);
-    
-    // Calculate priority for the sent message
-    const room = client.getRoom(decodeURIComponent(roomId));
-    const priority = calculateMessagePriority({
-      getContent: () => ({ body: content }),
-      getSender: () => client.getUserId(),
-      getDate: () => new Date()
-    }, room);
-
-    console.log('Message sent successfully:', message.eventId);
+    // sendMessage function must be adjusted not to recalculate priority
+    const message = await sendMessageWithoutPriorityCalc(client, decodeURIComponent(roomId), content);
 
     res.json({
       success: true,
       eventId: message.eventId,
       content: message.content,
       timestamp: message.timestamp,
-      priority
+      priority: finalPriority
     });
   } catch (error) {
     console.error('Failed to send message:', error);
-    res.status(500).json({ 
-      error: 'Failed to send message',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to send message' });
   }
 });
+
+// Adjust your `sendMessage` function to NOT calculate priority:
+// Just send the message and return the bare message data.
+async function sendMessageWithoutPriorityCalc(client, roomId, content) {
+  const response = await client.sendMessage(roomId, {
+    msgtype: 'm.text',
+    body: content
+  });
+
+  return {
+    eventId: response.event_id,
+    content,
+    sender: client.getUserId(),
+    timestamp: Date.now(),
+    type: 'm.room.message'
+  };
+}
+
 
 router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) => {
   try {

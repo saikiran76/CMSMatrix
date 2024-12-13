@@ -8,6 +8,31 @@ const router = express.Router();
 
 router.use(authenticateToken);
 
+const userCache = new Map();
+
+async function resolveSlackUserIds(text, slack) {
+  // Find all user mentions like <@U123ABC>
+  const userMentions = text.match(/<@([A-Z0-9]+)>/g);
+  if (!userMentions) return text;
+
+  for (const mention of userMentions) {
+    const userId = mention.slice(2, -1); // Extract ID from <@U123ABC>
+    if (!userCache.has(userId)) {
+      // Fetch user info
+      const userInfo = await slack.users.info({ user: userId });
+      if (userInfo.ok && userInfo.user) {
+        userCache.set(userId, userInfo.user.real_name || userInfo.user.name);
+      } else {
+        userCache.set(userId, userId); // fallback to userId if no info
+      }
+    }
+    const displayName = userCache.get(userId);
+    // Replace the mention in the text
+    text = text.replace(mention, displayName);
+  }
+  return text;
+}
+
 // GET /slack/channels - List all channels
 router.get('/channels', async (req, res) => {
   try {
@@ -47,55 +72,11 @@ router.get('/channels', async (req, res) => {
   }
 });
 
-// GET /slack/channels/:channelId/messages - Fetch messages
-router.get('/channels/:channelId/messages', async (req, res) => {
-  try {
-    const { channelId } = req.params;
-    const { limit = 50 } = req.query;
-    const slack = getSlackClient();
-
-    const response = await slack.conversations.history({
-      channel: channelId,
-      limit: parseInt(limit),
-      inclusive: true
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch Slack messages');
-    }
-
-    const messages = (response.messages || []).map(msg => {
-      const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
-
-      const pseudoEvent = {
-        getContent: () => ({ body: msg.text }),
-        getSender: () => msg.user || 'unknown_user',
-        getDate: () => new Date(timestamp)
-      };
-      const priority = calculateMessagePriority(pseudoEvent, { timeline: [] });
-
-      return {
-        id: msg.ts,
-        content: msg.text,
-        sender: msg.user || 'unknown_user',
-        senderName: msg.user || 'Unknown User',
-        timestamp: timestamp,
-        priority
-      };
-    }).reverse();
-
-    res.json({ messages, channelId });
-  } catch (error) {
-    console.error('Error fetching Slack messages:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /slack/channels/:channelId/messages - Send a message
+// POST /slack/channels/:channelId/messages - Send a message with user-chosen priority
 router.post('/channels/:channelId/messages', async (req, res) => {
   try {
     const { channelId } = req.params;
-    const { content } = req.body;
+    const { content, priority } = req.body;
     const slack = getSlackClient();
 
     if (!content) {
@@ -111,26 +92,72 @@ router.post('/channels/:channelId/messages', async (req, res) => {
       throw new Error('Failed to send Slack message');
     }
 
-    const timestamp = Math.floor(parseFloat(response.ts) * 1000);
-    const pseudoEvent = {
-      getContent: () => ({ body: content }),
-      getSender: () => response.message.user || 'unknown_user',
-      getDate: () => new Date(timestamp)
-    };
-    const priority = calculateMessagePriority(pseudoEvent, { timeline: [] });
+    // Use the priority from the request or default to 'medium'
+    const finalPriority = priority || 'medium';
 
+    // Just return the chosen priority, no recalculation
+    const timestamp = Math.floor(parseFloat(response.ts) * 1000);
     res.json({
       success: true,
       eventId: response.ts,
       content: content,
       timestamp: timestamp,
-      priority
+      priority: finalPriority
     });
   } catch (error) {
     console.error('Failed to send Slack message:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
+// GET /slack/channels/:channelId/messages - Fetch messages and resolve user names
+router.get('/channels/:channelId/messages', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { limit = 50 } = req.query;
+    const slack = getSlackClient();
+
+    const response = await slack.conversations.history({
+      channel: channelId,
+      limit: parseInt(limit, 10),
+      inclusive: true
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch Slack messages');
+    }
+
+    let messages = response.messages || [];
+
+    // Resolve user IDs in message text
+    for (let i = 0; i < messages.length; i++) {
+      messages[i].text = await resolveSlackUserIds(messages[i].text, slack);
+    }
+
+    // Now map the messages to a unified format
+    const formatted = messages.map(msg => {
+      const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
+
+      // Since we no longer recalculate priority based on content,
+      // just default to low priority for displayed messages or add logic if needed.
+      // Or leave as 'low' since these are historical messages.
+      return {
+        id: msg.ts,
+        content: msg.text,
+        sender: msg.user || 'unknown_user',
+        senderName: msg.user || 'Unknown User',
+        timestamp: timestamp,
+        priority: 'low'
+      };
+    }).reverse();
+
+    res.json({ messages: formatted, channelId });
+  } catch (error) {
+    console.error('Error fetching Slack messages:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // GET /slack/channels/:channelId/summary - Generate summary of the channel
 router.get('/channels/:channelId/summary', async (req, res) => {

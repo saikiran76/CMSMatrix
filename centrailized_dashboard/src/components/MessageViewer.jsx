@@ -13,6 +13,9 @@ const MessageViewer = ({ roomId, selectedView }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [messageInput, setMessageInput] = useState('');
 
+  const [selectedPriority, setSelectedPriority] = useState('medium');
+
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -24,14 +27,14 @@ const MessageViewer = ({ roomId, selectedView }) => {
   };
 
   const handlePriorityChange = (priority) => {
-    setSelectedPriorities(prev => 
+    setSelectedPriorities(prev =>
       prev.includes(priority)
         ? prev.filter(p => p !== priority)
         : [...prev, priority]
     );
   };
 
-  const filteredMessages = messages.filter(message => 
+  const filteredMessages = messages.filter(message =>
     selectedPriorities.includes(message.priority)
   );
 
@@ -46,9 +49,10 @@ const MessageViewer = ({ roomId, selectedView }) => {
         ? `/slack/channels/${encodeURIComponent(roomId)}/messages`
         : `/rooms/${encodeURIComponent(roomId)}/messages`;
 
+      // Use selectedPriority chosen by the user
       const response = await axios.post(sendEndpoint, {
         content,
-        priority: 'medium' // Default priority, though not used by Slack endpoint directly
+        priority: selectedPriority
       });
 
       setMessages(prev => [...prev, response.data]);
@@ -56,9 +60,9 @@ const MessageViewer = ({ roomId, selectedView }) => {
       scrollToBottom();
     } catch (error) {
       console.error('Error sending message:', error);
-      // You might show a notification or handle the error gracefully
     }
   };
+
 
   const handleSuggestionSelect = async (suggestion) => {
     await handleSendMessage(suggestion);
@@ -86,7 +90,7 @@ const MessageViewer = ({ roomId, selectedView }) => {
         }
       } catch (error) {
         console.error('Error fetching messages:', error);
-        const errorMessage = error.code === 'ERR_NETWORK' 
+        const errorMessage = error.code === 'ERR_NETWORK'
           ? 'Unable to connect to server. Please check your connection and try again.'
           : error.response?.data?.error || 'Failed to load messages';
         setError(errorMessage);
@@ -105,7 +109,7 @@ const MessageViewer = ({ roomId, selectedView }) => {
       <div className="flex items-center justify-center h-full">
         <div className="text-error text-center">
           <p className="mb-4">{error}</p>
-          <button 
+          <button
             onClick={handleRetry}
             className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
           >
@@ -137,10 +141,23 @@ const MessageViewer = ({ roomId, selectedView }) => {
 
   return (
     <div className="flex flex-col h-full">
-      <PriorityFilter 
+      <PriorityFilter
         selectedPriorities={selectedPriorities}
         onPriorityChange={handlePriorityChange}
       />
+      <div className="p-2 flex items-center gap-2">
+        <span className="text-gray-300">Send as:</span>
+        {['high', 'medium', 'low'].map(p => (
+          <button
+            key={p}
+            onClick={() => setSelectedPriority(p)}
+            className={p === selectedPriority ? 'bg-primary text-white px-3 py-1 rounded' : 'bg-gray-700 text-gray-300 px-3 py-1 rounded'}
+          >
+            {p.charAt(0).toUpperCase() + p.slice(1)}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {filteredMessages.map((message) => (
           <div
@@ -149,28 +166,24 @@ const MessageViewer = ({ roomId, selectedView }) => {
             className="cursor-pointer hover:opacity-90"
           >
             <div
-              className={`flex ${
-                message.sender === localStorage.getItem('userId')
+              className={`flex ${message.sender === localStorage.getItem('userId')
                   ? 'justify-end'
                   : 'justify-start'
-              }`}
+                }`}
             >
               <div
-                className={`max-w-[70%] rounded-lg p-3 border-l-4 ${
-                  getPriorityColor(message.priority)
-                } ${
-                  message.sender === localStorage.getItem('userId')
+                className={`max-w-[70%] rounded-lg p-3 border-l-4 ${getPriorityColor(message.priority)
+                  } ${message.sender === localStorage.getItem('userId')
                     ? 'bg-primary text-white'
                     : 'bg-gray-700 text-white'
-                }`}
+                  }`}
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-sm text-gray-300">{message.senderName}</span>
-                  <span className={`text-xs px-2 py-1 rounded-full bg-opacity-20 ${
-                    message.priority === 'high' ? 'bg-red-500 text-red-200' : 
-                    message.priority === 'medium' ? 'bg-yellow-500 text-yellow-200' : 
-                    'bg-gray-500 text-gray-200'
-                  }`}>
+                  <span className={`text-xs px-2 py-1 rounded-full bg-opacity-20 ${message.priority === 'high' ? 'bg-red-500 text-red-200' :
+                      message.priority === 'medium' ? 'bg-yellow-500 text-yellow-200' :
+                        'bg-gray-500 text-gray-200'
+                    }`}>
                     {message.priority}
                   </span>
                 </div>
@@ -185,13 +198,11 @@ const MessageViewer = ({ roomId, selectedView }) => {
         <div ref={messagesEndRef} />
       </div>
       {selectedMessage && (
-        <div className="border-t border-dark-lighter">
-          <ResponseSuggestions
-            message={selectedMessage.content}
-            onSelectSuggestion={handleSuggestionSelect}
-          />
-        </div>
+        selectedMessage.content.includes('Unable to decrypt')
+          ? <p className="p-2 text-gray-400">No suggestions for encrypted messages.</p>
+          : <ResponseSuggestions message={selectedMessage.content} onSelectSuggestion={handleSuggestionSelect} />
       )}
+
       <div className="border-t border-dark-lighter p-4">
         <div className="flex gap-2">
           <input

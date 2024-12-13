@@ -7,8 +7,13 @@ const ResponseSuggestions = ({ message, onSelectSuggestion }) => {
 
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (!message) return;
-
+      if (!message || message.includes('Unable to decrypt')) {
+        // No suggestions if message is undecryptable
+        setSuggestions([]);
+        setLoading(false);
+        return;
+      }
+  
       try {
         setLoading(true);
         const response = await axios.get(`/ai/suggestions?message=${encodeURIComponent(message)}`);
@@ -20,9 +25,10 @@ const ResponseSuggestions = ({ message, onSelectSuggestion }) => {
         setLoading(false);
       }
     };
-
+  
     fetchSuggestions();
   }, [message]);
+  
 
   if (loading || !suggestions.length) return null;
 
