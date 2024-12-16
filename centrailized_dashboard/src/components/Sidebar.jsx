@@ -38,6 +38,16 @@ const Sidebar = ({ selectedView, onViewChange }) => {
           <span>Slack</span>
         </button>
 
+        <button
+          // onClick={() => onViewChange('slack')}
+          className='w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors'
+        >
+          {/* <FiMessageSquare className="text-xl" /> */}
+          {/* <img className='size-6' src="https://static-00.iconduck.com/assets.00/slack-icon-2048x2048-5nfqoyso.png" alt="slack"/> */}
+          <span>More can be added</span>
+        </button>
+
+
 
         <button
           onClick={() => onViewChange('discovery')}

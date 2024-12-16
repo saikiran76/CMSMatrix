@@ -9,7 +9,7 @@ password: admin123
 
 ### Features
 This centralized dashboard allows the admin or staff to manage the below:
-- the infrastructure is there but limited to one platform. (Currentlt Matrix and Slack platforms are supported)
+- the infrastructure is there but not limited to one platform. (Currentlt Matrix and Slack platforms are supported)
 - Monitor multiple matrix chat rooms and slack channels
 - AI-Powered Automation is happening: Analyze the conversations using Gemini AI's sentiment analysis
 - track priorities of messages
