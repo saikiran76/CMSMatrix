@@ -7,13 +7,18 @@ import CustomerDetails from './CustomerDetails';
 import MessageViewer from './MessageViewer';
 import axios from '../utils/axios';
 
-const Dashboard = ({ user }) => {
+const Dashboard = () => {
   const [selectedView, setSelectedView] = useState('chats');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeComponent, setActiveComponent] = useState('messages');
   const [rooms, setRooms] = useState([]);
+
+  const user = {
+    email : "admin@exmaple.com",
+    password: "admin123"
+  }
 
   useEffect(() => {
     const initializeDashboard = async () => {

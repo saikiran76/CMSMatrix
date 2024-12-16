@@ -10,16 +10,16 @@ const App = () => {
     <Router>
       <div className="min-h-screen bg-dark text-white">
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
+          {/* <Route path="/login" element={<Login />} /> */}
+          {/* <Route
             path="/dashboard/*"
             element={
               <ProtectedRoute>
                 <DashBoard user={JSON.parse(localStorage.getItem('user') || '{}')} />
               </ProtectedRoute>
             }
-          />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          /> */}
+          <Route path="/" element={<DashBoard/>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>

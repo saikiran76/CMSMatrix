@@ -4,7 +4,6 @@ import { FiMessageSquare, FiCompass, FiSettings, FiLogOut } from 'react-icons/fi
 const Sidebar = ({ selectedView, onViewChange }) => {
   return (
     <div className="w-64 bg-dark-darker flex flex-col h-full">
-      {/* Logo Section */}
       <div className="p-6">
         <div className="flex items-center gap-2">
           <img className="h-8 w-8 rounded-full" src="https://www.shutterstock.com/image-vector/support-icon-can-be-used-600nw-1887496465.jpg" alt="Akazumi" />
@@ -61,8 +60,9 @@ const Sidebar = ({ selectedView, onViewChange }) => {
 
         <button
           onClick={() => {
-            localStorage.removeItem('token');
-            window.location.reload();
+            // localStorage.removeItem('token');
+            // window.location.reload();
+            alert("login layer is removed currently")
           }}
           className="w-full flex items-center gap-3 px-4 py-3 text-error hover:bg-dark-lighter rounded-lg transition-colors"
         >
