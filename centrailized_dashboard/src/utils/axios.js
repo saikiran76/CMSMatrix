@@ -16,9 +16,10 @@ instance.interceptors.request.use(
   (config) => {
     const adminToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3MzhlZGY0OTkxNWMyODNkMDUyMzkyYyIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3MzQzNTk1NDcsImV4cCI6MTczNDQ0NTk0N30.meUmVrJPx3yHX_hKlPmjmPX57czbNtzWKX8Z-8Lyz9A'
     // const token = localStorage.getItem('token');
-    if (adminToken) {
-      config.headers.Authorization = `Bearer ${adminToken}`;
-    }
+    config.headers.Authorization = `Bearer ${adminToken}`;
+    // if (adminToken) {
+    //   config.headers.Authorization = `Bearer ${adminToken}`;
+    // }
     return config;
   },
   (error) => {
