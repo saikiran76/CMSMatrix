@@ -1,11 +1,11 @@
 ## Centralized AI based communication management system
 
 ### Login Creds
-'''
-Please Login using the below admin creds:
+```Please Login using the below admin creds:
 username (email): admin@example.com
 password: admin123
-'''
+- Edit (By passing Login temporarily)
+```
 
 ### Features
 This centralized dashboard allows the admin or staff to manage the below:
