@@ -1,4 +1,6 @@
 import express from 'express';
+
+import Message from '../models/Message.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, categorizeMessage, analyzeSentiment,generateMessageSummary, extractKeyTopics } from '../services/matrixService.js';
 
@@ -80,33 +82,31 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/:roomId/messages', authenticateToken, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { limit = 50, before } = req.query;
-    const client = req.app.locals.matrixClient;
+    const { limit = 50 } = req.query;
 
-    console.log('Fetching messages for room:', roomId);
-    console.log('Matrix client state:', client?.getSyncState());
+    // Fetch messages from DB
+    const msgs = await Message.find({ roomId, platform: 'matrix' })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .lean();
 
-    if (!client) {
-      throw new Error('Matrix client not initialized');
-    }
+    // Reverse to oldest first if needed
+    const messages = msgs.reverse().map(m => ({
+      id: m._id.toString(),
+      content: m.content,
+      sender: m.sender,
+      senderName: m.senderName,
+      timestamp: m.timestamp.getTime(),
+      priority: m.priority
+    }));
 
-    const decodedRoomId = decodeURIComponent(roomId);
-    const messages = await getRoomMessages(client, decodedRoomId, parseInt(limit));
-    
-    console.log(`Returning ${messages.length} messages for room ${roomId}`);
-    
-    res.json({
-      messages,
-      roomId: decodedRoomId,
-      nextToken: before
-    });
+    res.json({ messages, roomId });
   } catch (error) {
     console.error('Error fetching room messages:', error);
-    res.status(error.message.includes('not found') ? 404 : 500).json({ 
-      error: error.message 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 // Get customer details with enhanced error handling
 router.get('/:roomId/customer', authenticateToken, async (req, res) => {
@@ -223,17 +223,32 @@ router.post('/:roomId/messages', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Message content is required' });
     }
 
-    // No recalculation of priority, use user-provided priority or default 'medium'
     const finalPriority = priority || 'medium';
 
-    // sendMessage function must be adjusted not to recalculate priority
-    const message = await sendMessageWithoutPriorityCalc(client, decodeURIComponent(roomId), content);
+    // Send the message to Matrix
+    const response = await client.sendMessage(roomId, {
+      msgtype: 'm.text',
+      body: content
+    });
+
+    // response.event_id and client.getUserId() for sender ID
+    const sender = client.getUserId(); 
+    const newMessage = new Message({
+      content,
+      sender,
+      senderName: sender, // Or fetch a display name if needed
+      priority: finalPriority,
+      platform: 'matrix',
+      roomId: roomId,
+      timestamp: new Date()
+    });
+    await newMessage.save();
 
     res.json({
       success: true,
-      eventId: message.eventId,
-      content: message.content,
-      timestamp: message.timestamp,
+      eventId: response.event_id,
+      content: content,
+      timestamp: newMessage.timestamp.getTime(),
       priority: finalPriority
     });
   } catch (error) {

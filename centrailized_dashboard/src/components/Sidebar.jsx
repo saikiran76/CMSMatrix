@@ -8,7 +8,7 @@ const Sidebar = ({ selectedView, onViewChange }) => {
       <div className="p-6">
         <div className="flex items-center gap-2">
           <img className="h-8 w-8 rounded-full" src="https://www.shutterstock.com/image-vector/support-icon-can-be-used-600nw-1887496465.jpg" alt="Akazumi" />
-          <span className="text-xl font-semibold text-white">Seamless CMS</span>
+          <span className="text-xl font-semibold text-white">Centralized CMS</span>
         </div>
       </div>
 

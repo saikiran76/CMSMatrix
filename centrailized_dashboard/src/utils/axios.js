@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const instance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://cmsmatrix.onrender.com',
-  // baseURL: 'http://localhost:3001',
+  // baseURL: import.meta.env.VITE_API_URL || 'https://cmsmatrix.onrender.com',
+  baseURL: 'http://localhost:3001',
   timeout: 30000,
   withCredentials: true,
   headers: {

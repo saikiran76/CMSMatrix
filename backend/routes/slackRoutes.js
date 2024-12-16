@@ -1,4 +1,6 @@
 import express from 'express';
+
+import Message from '../models/Message.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { getSlackClient } from '../services/slackService.js';
 import { analyzeSentiment, categorizeMessage, generateMessageSummary } from '../services/matrixService.js'; // reuse AI logic
@@ -73,15 +75,17 @@ router.get('/channels', async (req, res) => {
 });
 
 // POST /slack/channels/:channelId/messages - Send a message with user-chosen priority
-router.post('/channels/:channelId/messages', async (req, res) => {
+router.post('/channels/:channelId/messages', authenticateToken, async (req, res) => {
   try {
     const { channelId } = req.params;
     const { content, priority } = req.body;
-    const slack = getSlackClient();
+    const slack = req.app.locals.slackClient;
 
     if (!content) {
       return res.status(400).json({ error: 'Message content is required' });
     }
+
+    const finalPriority = priority || 'medium';
 
     const response = await slack.chat.postMessage({
       channel: channelId,
@@ -92,11 +96,19 @@ router.post('/channels/:channelId/messages', async (req, res) => {
       throw new Error('Failed to send Slack message');
     }
 
-    // Use the priority from the request or default to 'medium'
-    const finalPriority = priority || 'medium';
+    const sender = response.message.user || 'unknown_user';
+    const newMessage = new Message({
+      content,
+      sender,
+      senderName: sender,
+      priority: finalPriority,
+      platform: 'slack',
+      roomId: channelId,
+      timestamp: new Date()
+    });
+    await newMessage.save();
 
-    // Just return the chosen priority, no recalculation
-    const timestamp = Math.floor(parseFloat(response.ts) * 1000);
+    const timestamp = newMessage.timestamp.getTime();
     res.json({
       success: true,
       eventId: response.ts,
@@ -109,54 +121,34 @@ router.post('/channels/:channelId/messages', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 // GET /slack/channels/:channelId/messages - Fetch messages and resolve user names
-router.get('/channels/:channelId/messages', async (req, res) => {
+router.get('/channels/:channelId/messages', authenticateToken, async (req, res) => {
   try {
     const { channelId } = req.params;
     const { limit = 50 } = req.query;
-    const slack = getSlackClient();
 
-    const response = await slack.conversations.history({
-      channel: channelId,
-      limit: parseInt(limit, 10),
-      inclusive: true
-    });
+    // Fetch messages from DB
+    const msgs = await Message.find({ roomId: channelId, platform: 'slack' })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .lean();
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch Slack messages');
-    }
+    const messages = msgs.reverse().map(m => ({
+      id: m._id.toString(),
+      content: m.content,
+      sender: m.sender,
+      senderName: m.senderName,
+      timestamp: m.timestamp.getTime(),
+      priority: m.priority
+    }));
 
-    let messages = response.messages || [];
-
-    // Resolve user IDs in message text
-    for (let i = 0; i < messages.length; i++) {
-      messages[i].text = await resolveSlackUserIds(messages[i].text, slack);
-    }
-
-    // Now map the messages to a unified format
-    const formatted = messages.map(msg => {
-      const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
-
-      // Since we no longer recalculate priority based on content,
-      // just default to low priority for displayed messages or add logic if needed.
-      // Or leave as 'low' since these are historical messages.
-      return {
-        id: msg.ts,
-        content: msg.text,
-        sender: msg.user || 'unknown_user',
-        senderName: msg.user || 'Unknown User',
-        timestamp: timestamp,
-        priority: 'low'
-      };
-    }).reverse();
-
-    res.json({ messages: formatted, channelId });
+    res.json({ messages, channelId });
   } catch (error) {
     console.error('Error fetching Slack messages:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
 
 
 // GET /slack/channels/:channelId/summary - Generate summary of the channel

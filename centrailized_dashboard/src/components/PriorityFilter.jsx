@@ -22,6 +22,6 @@ const PriorityFilter = ({ selectedPriorities, onPriorityChange }) => {
         ))}
       </div>
     );
-  };
+};
   
-  export default PriorityFilter;
+export default PriorityFilter;
