@@ -20,8 +20,10 @@ const Sidebar = ({ selectedView, onViewChange }) => {
               : 'text-gray-400 hover:bg-dark-lighter hover:text-white'
             }`}
         >
-          <FiMessageSquare className="text-xl" />
-          <span>Chats</span>
+          {/* <FiMessageSquare className="text-xl" /> */}
+          <img className='size-6' src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRL8rBb0QC69ZLvNqWCbY6fW3FUkpJBdQckyg&s" alt="slack"/>
+          
+          <span>Matrix Client</span>
         </button>
 
         <button
@@ -31,7 +33,8 @@ const Sidebar = ({ selectedView, onViewChange }) => {
               : 'text-gray-400 hover:bg-dark-lighter hover:text-white'
             }`}
         >
-          <FiMessageSquare className="text-xl" />
+          {/* <FiMessageSquare className="text-xl" /> */}
+          <img className='size-6' src="https://static-00.iconduck.com/assets.00/slack-icon-2048x2048-5nfqoyso.png" alt="slack"/>
           <span>Slack</span>
         </button>
 
