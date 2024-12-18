@@ -5,12 +5,16 @@ import mongoose from 'mongoose';
 import cookieParser from 'cookie-parser';
 import { initializeMatrixClient } from './services/matrixService.js';
 import { initializeSlackClient } from './services/slackService.js';
-
+import { 
+  initializeDiscordClient, 
+} from './services/DiscordService.js'
+import discordRoutes from './routes/discordRoutes.js'
 import authRoutes from './routes/authRoutes.js';
 import roomRoutes from './routes/roomRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import slackRoutes from './routes/slackRoutes.js'
 import { errorHandler } from './middleware/errorHandler.js';
+import { initializeWhatsAppClient } from './services/whatsappTwilioService.js';
 dotenv.config();
 
 const app = express();
@@ -97,6 +101,8 @@ app.use('/auth', authRoutes);
 app.use('/rooms', roomRoutes);
 app.use('/admin', adminRoutes);
 app.use('/slack', slackRoutes);
+app.use('/discord', discordRoutes);
+// app.use('/whatsapp', whatsappRoutes);
 
 // Error handling
 app.use(errorHandler);
@@ -107,6 +113,7 @@ const startServer = async () => {
     await connectDB();
     await initializeMatrix();
     await initializeSlack()
+    // await initializeDiscordClient()
     
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
