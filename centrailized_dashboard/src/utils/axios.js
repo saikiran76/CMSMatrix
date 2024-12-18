@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const instance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://cmsmatrix.onrender.com',
-  // baseURL: 'http://localhost:3001',
+  // baseURL: import.meta.env.VITE_API_URL || 'https://cmsmatrix.onrender.com',
+  baseURL: 'http://localhost:3001',
   timeout: 30000,
   withCredentials: true,
   headers: {
@@ -14,7 +14,7 @@ const instance = axios.create({
 // Request interceptor
 instance.interceptors.request.use(
   (config) => {
-    const adminToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3MzhlZGY0OTkxNWMyODNkMDUyMzkyYyIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3MzQzNTk1NDcsImV4cCI6MTczNDQ0NTk0N30.meUmVrJPx3yHX_hKlPmjmPX57czbNtzWKX8Z-8Lyz9A'
+    const adminToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3MzhlZGY0OTkxNWMyODNkMDUyMzkyYyIsImVtYWlsIjoiYWRtaW5AZXhhbXBsZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3MzQ1MzMwNzksImV4cCI6MTczNDYxOTQ3OX0.zIr1QNGCJGi0dLvHlLhhY3_3cDMbfMWbXBtvHPv209E'
     // const token = localStorage.getItem('token');
     config.headers.Authorization = `Bearer ${adminToken}`;
     // if (adminToken) {
