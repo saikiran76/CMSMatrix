@@ -1,60 +1,84 @@
+// backend/routes/slackRoutes.js
 import express from 'express';
-
-import Message from '../models/Message.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { getSlackClient } from '../services/slackService.js';
-import { analyzeSentiment, categorizeMessage, generateMessageSummary } from '../services/matrixService.js'; // reuse AI logic
-import { calculateMessagePriority } from '../services/matrixService.js'; // reuse priority logic
+import Message from '../models/Message.js';
+import Account from '../models/Account.js';
+import User from '../models/User.js';
+import { getSlackClientForUser, fetchSlackMessagesForUser } from '../services/slackService.js';
+import { analyzeSentiment, categorizeMessage, calculateMessagePriority } from '../services/matrixService.js';
+import { processSlackEvent, exchangeSlackCodeForToken } from '../services/slackService.js';
 
 const router = express.Router();
-
 router.use(authenticateToken);
 
-const userCache = new Map();
-
-async function resolveSlackUserIds(text, slack) {
-  // Find all user mentions like <@U123ABC>
-  const userMentions = text.match(/<@([A-Z0-9]+)>/g);
-  if (!userMentions) return text;
-
-  for (const mention of userMentions) {
-    const userId = mention.slice(2, -1); // Extract ID from <@U123ABC>
-    if (!userCache.has(userId)) {
-      // Fetch user info
-      const userInfo = await slack.users.info({ user: userId });
-      if (userInfo.ok && userInfo.user) {
-        userCache.set(userId, userInfo.user.real_name || userInfo.user.name);
-      } else {
-        userCache.set(userId, userId); // fallback to userId if no info
-      }
-    }
-    const displayName = userCache.get(userId);
-    // Replace the mention in the text
-    text = text.replace(mention, displayName);
+// Slack event subscription endpoint:
+router.post('/events', async (req,res)=>{
+  const {challenge, event, team_id}=req.body;
+  if(challenge) return res.send(challenge);
+  if(event && team_id) {
+    await processSlackEvent(team_id, event);
   }
-  return text;
-}
+  res.json({ok:true});
+});
 
-// GET /slack/channels - List all channels
+router.get('/initiate', async(req,res)=>{
+  const userId=req.user.id;
+  const state=jwt.sign({userId},process.env.JWT_SECRET,{expiresIn:'10m'});
+  const redirect_uri='http://localhost:3001/slack/callback';
+  const url=`https://slack.com/oauth/v2/authorize?client_id=${process.env.SLACK_CLIENT_ID}&scope=channels:history,channels:read,chat:write,groups:history,groups:read,im:history,im:read,users:read&user_scope=&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}`;
+  res.json({status:'redirect', url});
+});
+
+// Slack OAuth callback:
+router.get('/callback', async (req,res)=>{
+  const {code, state}=req.query;
+  try {
+    const decoded=jwt.verify(state, process.env.JWT_SECRET);
+    const userId=decoded.userId;
+    const resp=await exchangeSlackCodeForToken(code);
+    if(!resp.ok) {
+      console.error('Slack OAuth failed:', resp.error);
+      return res.status(500).send('Slack OAuth failed');
+    }
+    // store in Account:
+    let account=await Account.findOne({userId,platform:'slack'});
+    const credentials={
+      access_token:resp.access_token,
+      team_id:resp.team.id,
+      team_name:resp.team.name
+    };
+    if(!account) {
+      account=new Account({userId, platform:'slack', credentials});
+      await account.save();
+    } else {
+      account.credentials=credentials;
+      await account.save();
+    }
+    // redirect to dashboard
+    res.redirect('http://localhost:5173/dashboard');
+  } catch(err) {
+    console.error('Slack callback error:', err);
+    res.status(500).send('Slack callback failed');
+  }
+});
+
+// List channels for authenticated user
 router.get('/channels', async (req, res) => {
   try {
-    const slack = getSlackClient();
+    const slack = await getSlackClientForUser(req.user._id);
     const response = await slack.conversations.list({
       limit: 100,
       types: 'public_channel,private_channel'
     });
-    console.log('Full Slack response:', JSON.stringify(response, null, 2));
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch Slack channels');
     }
 
     if (!response.channels) {
-      console.log('No channels field in response:', response);
       return res.json([]);
     }
 
-    // Normalize channel data
     const channels = response.channels.map(ch => ({
       id: ch.id,
       name: ch.name,
@@ -64,9 +88,6 @@ router.get('/channels', async (req, res) => {
       memberCount: ch.num_members || 0
     }));
 
-    console.log('Slack channels:', channels);
-
-    // Return the normalized channels array
     res.json(channels);
   } catch (error) {
     console.error('Error fetching Slack channels:', error);
@@ -74,12 +95,12 @@ router.get('/channels', async (req, res) => {
   }
 });
 
-// POST /slack/channels/:channelId/messages - Send a message with user-chosen priority
-router.post('/channels/:channelId/messages', authenticateToken, async (req, res) => {
+// Send a message
+router.post('/channels/:channelId/messages',  async (req, res) => {
   try {
     const { channelId } = req.params;
     const { content, priority } = req.body;
-    const slack = req.app.locals.slackClient;
+    const slack = await getSlackClientForUser(req.user._id);
 
     if (!content) {
       return res.status(400).json({ error: 'Message content is required' });
@@ -97,7 +118,7 @@ router.post('/channels/:channelId/messages', authenticateToken, async (req, res)
     }
 
     const sender = response.message.user || 'unknown_user';
-    const newMessage = new Message({
+    await Message.create({
       content,
       sender,
       senderName: sender,
@@ -106,14 +127,12 @@ router.post('/channels/:channelId/messages', authenticateToken, async (req, res)
       roomId: channelId,
       timestamp: new Date()
     });
-    await newMessage.save();
 
-    const timestamp = newMessage.timestamp.getTime();
     res.json({
       success: true,
       eventId: response.ts,
-      content: content,
-      timestamp: timestamp,
+      content,
+      timestamp: Date.now(),
       priority: finalPriority
     });
   } catch (error) {
@@ -121,13 +140,16 @@ router.post('/channels/:channelId/messages', authenticateToken, async (req, res)
     res.status(500).json({ error: error.message });
   }
 });
-// GET /slack/channels/:channelId/messages - Fetch messages and resolve user names
-router.get('/channels/:channelId/messages', authenticateToken, async (req, res) => {
+
+// Fetch messages for a channel
+router.get('/channels/:channelId/messages',  async (req, res) => {
   try {
     const { channelId } = req.params;
     const { limit = 50 } = req.query;
 
-    // Fetch messages from DB
+    // Fetch latest Slack messages before returning from DB
+    await fetchSlackMessagesForUser(req.user._id, channelId);
+
     const msgs = await Message.find({ roomId: channelId, platform: 'slack' })
       .sort({ timestamp: -1 })
       .limit(parseInt(limit))
@@ -149,34 +171,22 @@ router.get('/channels/:channelId/messages', authenticateToken, async (req, res) 
   }
 });
 
-
-
-// GET /slack/channels/:channelId/summary - Generate summary of the channel
+// Summary
 router.get('/channels/:channelId/summary', async (req, res) => {
   try {
     const { channelId } = req.params;
-    const slack = getSlackClient();
+    await fetchSlackMessagesForUser(req.user._id, channelId);
 
-    const messageResponse = await slack.conversations.history({
-      channel: channelId,
-      limit: 50
-    });
-
-    if (!messageResponse.ok) {
-      throw new Error('Failed to fetch Slack messages for summary');
-    }
-
-    const messages = messageResponse.messages.map(msg => {
-      const timestamp = Math.floor(parseFloat(msg.ts) * 1000);
-      return {
-        content: msg.text,
-        sender: msg.user || 'unknown_user',
-        timestamp,
-        getContent: () => ({ body: msg.text }),
-        getSender: () => msg.user || 'unknown_user',
-        getDate: () => new Date(timestamp)
-      };
-    });
+    // Fetch from DB now
+    const msgs = await Message.find({ roomId: channelId, platform: 'slack' }).lean();
+    const messages = msgs.map(m => ({
+      content: m.content,
+      sender: m.sender,
+      timestamp: m.timestamp.getTime(),
+      getContent: () => ({ body: m.content }),
+      getSender: () => m.sender,
+      getDate: () => new Date(m.timestamp)
+    }));
 
     const keyTopics = [...new Set(messages.flatMap(m => m.getContent().body.toLowerCase().split(/\W+/)))].slice(0,5);
     const priorityBreakdown = {
@@ -197,7 +207,7 @@ router.get('/channels/:channelId/summary', async (req, res) => {
 
     const summary = {
       messageCount: messages.length,
-      keyTopics: keyTopics,
+      keyTopics,
       priorityBreakdown,
       sentimentAnalysis,
       categories
@@ -209,5 +219,16 @@ router.get('/channels/:channelId/summary', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// router.post('/events', async (req,res)=>{
+//   const {challenge, event, team_id} = req.body;
+//   if (challenge) return res.send(challenge);
+
+//   if (event && team_id) {
+//     await processSlackEvent(team_id, event);
+//   }
+//   res.json({ok:true});
+// });
+
 
 export default router;

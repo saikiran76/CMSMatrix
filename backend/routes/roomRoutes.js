@@ -1,7 +1,7 @@
 import express from 'express';
 
 import Message from '../models/Message.js';
-import { authenticateToken } from '../middleware/auth.js';
+// import { authenticateToken } from '../middleware/auth.js'; removed middleware for a while
 import { getRoomMessages, getRoomSummary, getCustomerDetails, sendMessage, calculateMessagePriority, categorizeMessage, analyzeSentiment,generateMessageSummary, extractKeyTopics } from '../services/matrixService.js';
 
 const router = express.Router();
@@ -21,7 +21,7 @@ const logMatrixState = (req, res, next) => {
 router.use(logMatrixState);
 
 // Get all rooms
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/',  async (req, res) => {
   try {
     const client = req.app.locals.matrixClient;
     
@@ -79,7 +79,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get messages for a specific room
-router.get('/:roomId/messages', authenticateToken, async (req, res) => {
+router.get('/:roomId/messages',  async (req, res) => {
   try {
     const { roomId } = req.params;
     const { limit = 50 } = req.query;
@@ -109,7 +109,7 @@ router.get('/:roomId/messages', authenticateToken, async (req, res) => {
 
 
 // Get customer details with enhanced error handling
-router.get('/:roomId/customer', authenticateToken, async (req, res) => {
+router.get('/:roomId/customer',  async (req, res) => {
   try {
     const { roomId } = req.params;
     const client = req.app.locals.matrixClient;
@@ -161,7 +161,7 @@ router.get('/:roomId/customer', authenticateToken, async (req, res) => {
 });
 
 // Get room summary
-router.get('/:roomId/summary', authenticateToken, async (req, res) => {
+router.get('/:roomId/summary',  async (req, res) => {
   try {
     const { roomId } = req.params;
     const client = req.app.locals.matrixClient;
@@ -197,7 +197,7 @@ router.get('/:roomId/summary', authenticateToken, async (req, res) => {
 });
 
 // Add a debug endpoint
-router.get('/debug/client', authenticateToken, (req, res) => {
+router.get('/debug/client',  (req, res) => {
   const client = req.app.locals.matrixClient;
   res.json({
     clientInitialized: !!client,
@@ -209,7 +209,7 @@ router.get('/debug/client', authenticateToken, (req, res) => {
 });
 
 // Example snippet for matrix message sending route (assuming something like '/rooms/:roomId/messages')
-router.post('/:roomId/messages', authenticateToken, async (req, res) => {
+router.post('/:roomId/messages',  async (req, res) => {
   try {
     const { roomId } = req.params;
     const { content, priority } = req.body;
@@ -275,7 +275,7 @@ async function sendMessageWithoutPriorityCalc(client, roomId, content) {
 }
 
 
-router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) => {
+router.get('/:roomId/conversation-summary',  async (req, res) => {
   try {
     const { roomId } = req.params;
     const client = req.app.locals.matrixClient;
@@ -326,7 +326,7 @@ router.get('/:roomId/conversation-summary', authenticateToken, async (req, res) 
   }
 });
 
-router.post('/:roomId/batch-analyze', authenticateToken, async (req, res) => {
+router.post('/:roomId/batch-analyze',  async (req, res) => {
   try {
     const { messages } = req.body;
     const client = req.app.locals.matrixClient;

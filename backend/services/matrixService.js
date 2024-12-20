@@ -20,61 +20,98 @@ const limiter = new RateLimiter({
   interval: 'minute'
 });
 
-export const initializeMatrixClient = async () => {
-  try {
-    if (!Olm) {
-      throw new Error('Olm is not available');
-    }
+// export const initializeMatrixClient = async () => {
+//   try {
+//     if (!Olm) {
+//       throw new Error('Olm is not available');
+//     }
 
-    // Generate a stable device ID if not provided
-    const deviceId = process.env.MATRIX_DEVICE_ID || 
-      `MATRIX_DEVICE_${Buffer.from(process.env.MATRIX_USER_ID).toString('base64')}`;
+//     // Generate a stable device ID if not provided
+//     const deviceId = process.env.MATRIX_DEVICE_ID || 
+//       `MATRIX_DEVICE_${Buffer.from(process.env.MATRIX_USER_ID).toString('base64')}`;
 
-    await Olm.init();
-    const cryptoStore = new NodeCryptoStore();
+//     await Olm.init();
+//     const cryptoStore = new NodeCryptoStore();
     
-    const client = createClient({
-      baseUrl: process.env.MATRIX_HOME_SERVER,
-      accessToken: process.env.MATRIX_ACCESS_TOKEN,
-      userId: process.env.MATRIX_USER_ID,
-      deviceId: deviceId, // Use the generated or provided device ID
-      cryptoStore,
-      store: new sdk.MemoryStore(),
-      verificationMethods: [],
-      cryptoCallbacks: {
-        getCrossSigningKey: async () => null,
-        saveCrossSigningKeys: async () => {},
-        getSecretStorageKey: async () => null,
-      },
-      useAuthorizationHeader: true
+//     const client = createClient({
+//       baseUrl: process.env.MATRIX_HOME_SERVER,
+//       accessToken: process.env.MATRIX_ACCESS_TOKEN,
+//       userId: process.env.MATRIX_USER_ID,
+//       deviceId: deviceId, // Use the generated or provided device ID
+//       cryptoStore,
+//       store: new sdk.MemoryStore(),
+//       verificationMethods: [],
+//       cryptoCallbacks: {
+//         getCrossSigningKey: async () => null,
+//         saveCrossSigningKeys: async () => {},
+//         getSecretStorageKey: async () => null,
+//       },
+//       useAuthorizationHeader: true
+//     });
+
+//     await client.initCrypto();
+//     await client.startClient({ initialSyncLimit: 10 });
+
+//     // Set up automatic key sharing
+//     client.setCryptoTrustCrossSignedDevices(false);
+//     client.setGlobalErrorOnUnknownDevices(false);
+
+//     await new Promise((resolve, reject) => {
+//       const timeout = setTimeout(() => {
+//         client.removeAllListeners('sync');
+//         reject(new Error('Sync timeout'));
+//       }, 30000);
+
+//       client.once('sync', (state) => {
+//         if (state === 'PREPARED') {
+//           clearTimeout(timeout);
+//           resolve();
+//         }
+//       });
+//     });
+
+//     return client;
+//   } catch (error) {
+//     console.error('Matrix client initialization error:', error);
+//     throw error;
+//   }
+// };
+export const initializeMatrixClient = async () => {
+  matrixClient = sdk.createClient({
+    baseUrl: process.env.MATRIX_HOME_SERVER,
+    accessToken: process.env.MATRIX_ACCESS_TOKEN,
+    userId: process.env.MATRIX_USER_ID
+  });
+
+  await matrixClient.startClient({ initialSyncLimit: 10 });
+  await new Promise((resolve, reject) => {
+    matrixClient.once('sync', (state) => {
+      if (state === 'PREPARED') resolve();
     });
+  });
 
-    await client.initCrypto();
-    await client.startClient({ initialSyncLimit: 10 });
-
-    // Set up automatic key sharing
-    client.setCryptoTrustCrossSignedDevices(false);
-    client.setGlobalErrorOnUnknownDevices(false);
-
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        client.removeAllListeners('sync');
-        reject(new Error('Sync timeout'));
-      }, 30000);
-
-      client.once('sync', (state) => {
-        if (state === 'PREPARED') {
-          clearTimeout(timeout);
-          resolve();
-        }
+  // Listen for new messages
+  matrixClient.on('Room.timeline', async (event, room, toStartOfTimeline) => {
+    if (toStartOfTimeline) return;
+    if (event.getType() === 'm.room.message') {
+      const content = event.getContent().body || '';
+      const sender = event.getSender();
+      const senderName = room.getMember(sender)?.name || sender;
+      const timestamp = event.getDate();
+      const roomId = room.roomId;
+      await Message.create({
+        content,
+        sender,
+        senderName,
+        timestamp,
+        priority: 'medium',
+        platform: 'matrix',
+        roomId
       });
-    });
+    }
+  });
 
-    return client;
-  } catch (error) {
-    console.error('Matrix client initialization error:', error);
-    throw error;
-  }
+  return matrixClient;
 };
 
 export const searchMessages = async (client, term, page = 1, limit = 10) => {
@@ -606,3 +643,24 @@ export const sendMessage = async (client, roomId, content) => {
     throw error;
   }
 };
+
+export const fetchMatrixMessages = async (account) => {
+  // Just return a static message for demo
+  return [
+    {
+      id: 'mx_msg_1',
+      content: 'Hello from Matrix!',
+      sender: process.env.MATRIX_USER_ID,
+      senderName: 'Matrix User',
+      timestamp: Date.now(),
+      priority: 'medium',
+      platform: 'matrix',
+      roomId: '!demoRoom:matrix.org'
+    }
+  ];
+};
+
+// All messages are in DB
+// export const fetchMatrixMessages = async (account) => {
+//   return [];
+// };

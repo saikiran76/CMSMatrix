@@ -1,280 +1,142 @@
-import React, { useState, useEffect } from 'react';
-import Sidebar from './Sidebar';
-import ChatList from './ChatList';
-import RoomManager from './roomManager';
-import ConversationSummary from './ConversationSummary';
-import CustomerDetails from './CustomerDetails';
-import MessageViewer from './MessageViewer';
-import axios from '../utils/axios';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useContacts } from '../context/ContactContext';
+import api from '../utils/axios';
+import Sidebar from '../components/Sidebar';
+import UnifiedInbox from '../components/UnifiedInbox';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { io } from 'socket.io-client';
+import { toast } from 'react-toastify';
 
 const Dashboard = () => {
-  const [selectedView, setSelectedView] = useState('chats');
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [activeComponent, setActiveComponent] = useState('messages');
-  const [rooms, setRooms] = useState([]);
+  const navigate = useNavigate();
+  const { updateContacts } = useContacts();
 
-  const user = {
-    email : "admin@exmaple.com",
-    password: "admin123"
-  }
+  const [accounts, setAccounts] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [selectedPlatform, setSelectedPlatform] = useState(null);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [activeComponent, setActiveComponent] = useState('messages');
+  const [loading, setLoading] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const initializeDashboard = async () => {
+    const fetchInitialData = async () => {
+      setLoading(true);
       try {
-        setIsLoading(true);
-        setError(null);
-  
-        if (selectedView === 'slack') {
-          const response = await axios.get('/slack/channels');
-          console.log('Slack channels in frontend:', response.data);
-          setRooms(response.data); // This sets the rooms state to the list of Slack channels
-        } else if (selectedView === 'chats') {
-          const response = await axios.get('/rooms');
-          setRooms(response.data); // matrix rooms
+        const accRes = await api.get('/accounts');
+        console.log('User account state: ', accRes.data.accounts);
+        setAccounts(accRes.data.accounts);
+        if (accRes.data.accounts.length===0) {
+          setLoading(false);
+          navigate('/onboarding');
+          return;
         }
-      } catch (error) {
-        console.error('Dashboard initialization failed:', error);
-        setError(error.message || 'Failed to initialize dashboard');
+  
+        const msgRes = await api.get('/accounts/inbox');
+        setMessages(msgRes.data.messages || []);
+  
+        const contactRes = await api.get('/accounts/contacts');
+        updateContacts(contactRes.data.contacts || {});
+  
+        socketRef.current = io('http://localhost:3001', {
+          path: '/socket.io',
+          transports: ['websocket'],
+          withCredentials: true
+        });
+  
+        socketRef.current.on('connect', () => {
+          console.log('WebSocket connected');
+        });
+  
+        socketRef.current.on('new_message', (newMsg) => {
+          setMessages(prev => {
+            const updated = [...prev, newMsg].sort((a,b)=>(new Date(b.timestamp)-new Date(a.timestamp)));
+            return updated;
+          });
+        });
+  
+        socketRef.current.on('disconnect', () => {
+          console.log('WebSocket disconnected');
+        });
+  
+      } catch (err) {
+        console.error('Error loading data in Dashboard:', err);
+        if (err.response?.status === 401) {
+          toast.warn('Session expired. Redirecting...');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setTimeout(() => navigate('/login'), 2000);
+        } else {
+          toast.error('Failed to load data. Please try again.');
+        }
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
   
-    initializeDashboard();
-  }, [selectedView]);
+    fetchInitialData();
+  }, [navigate, updateContacts]); // If needed, dependencies can be empty. Just ensure it runs on mount.
+  
   
 
-
-  // Define renderRoomContent function
-  // const renderRoomContent = () => {
-  //   if (!selectedRoom) return null;
-
-  //   switch (activeComponent) {
-  //     case 'messages':
-  //       return <MessageViewer roomId={selectedRoom} />;
-  //     case 'summary':
-  //       return <ConversationSummary roomId={selectedRoom} />;
-  //     case 'details':
-  //       return <CustomerDetails roomId={selectedRoom} />;
-  //     default:
-  //       return null;
-  //   }
-  // };
-  const renderRoomContent = () => {
-    if (!selectedRoom) return null;
-  
-    switch (activeComponent) {
-      case 'messages':
-        return <MessageViewer roomId={selectedRoom} selectedView={selectedView} />;
-      case 'summary':
-        return <ConversationSummary roomId={selectedRoom} selectedView={selectedView} />;
-      case 'details':
-        return selectedView === 'slack'
-        ? <div>No customer details for Slack channels</div>
-        : <CustomerDetails roomId={selectedRoom} selectedView={selectedView} />;
-      default:
-        return null;
-    }
-  };
-  
-
-  // Define renderMainContent function
-  const renderMainContent = () => {
-    if (selectedView === 'chats') {
-      return (
-        <div className="flex h-full">
-          {/* Left Panel - Chat List */}
-          <div className={`${selectedRoom ? 'w-1/3' : 'w-full'} border-r border-dark-lighter`}>
-            {/* <ChatList 
-              onSelectRoom={(roomId) => {
-                setSelectedRoom(roomId);
-                setActiveComponent('messages');
-              }}
-              selectedRoom={selectedRoom}
-              rooms={rooms}
-            /> */}
-            <ChatList
-              rooms={rooms}
-              selectedRoom={selectedRoom}
-              selectedView={selectedView}
-              onSelectRoom={(id) => {
-                setSelectedRoom(id);
-                setActiveComponent('messages');
-              }}
-            />
-
-
-          </div>
-
-          {/* Right Panel - Room Details */}
-          {selectedRoom && (
-            <div className="w-2/3 flex flex-col">
-              {/* Tab Navigation */}
-              <div className="flex border-b border-dark-lighter">
-                <button
-                  onClick={() => setActiveComponent('messages')}
-                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'messages'
-                      ? 'border-b-2 border-primary text-primary'
-                      : 'text-gray-400 hover:text-white'
-                    }`}
-                >
-                  Messages
-                </button>
-                <button
-                  onClick={() => setActiveComponent('summary')}
-                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'summary'
-                      ? 'border-b-2 border-primary text-primary'
-                      : 'text-gray-400 hover:text-white'
-                    }`}
-                >
-                  Summary
-                </button>
-                <button
-                  onClick={() => setActiveComponent('details')}
-                  className={`px-6 py-3 text-sm font-medium ${activeComponent === 'details'
-                      ? 'border-b-2 border-primary text-primary'
-                      : 'text-gray-400 hover:text-white'
-                    }`}
-                >
-                  Customer Details
-                </button>
-              </div>
-
-              {/* Content Area */}
-              <div className="flex-1 overflow-auto p-6">
-                {renderRoomContent()}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (selectedView === 'discovery') {
-      return (
-        <div className="p-6">
-          <h2 className="text-2xl font-semibold mb-6">Technology Stack</h2>
-          <div className="grid grid-cols-3 gap-6">
-            <div className="card">
-              <h3 className="text-lg font-medium mb-2">MongoDB Database</h3>
-              <p className="text-gray-400">Connected and Active</p>
-            </div>
-            <div className="card">
-              <h3 className="text-lg font-medium mb-2">Matrix Protocol</h3>
-              <p className="text-gray-400">Secure Communication</p>
-            </div>
-            <div className="card">
-              <h3 className="text-lg font-medium mb-2">Node.js Backend</h3>
-              <p className="text-gray-400">High Performance</p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (selectedView === 'slack') {
-      // Similar logic for Slack channels
-      return (
-        <div className="flex h-full">
-          <div className={`${selectedRoom ? 'w-1/3' : 'w-full'} border-r border-dark-lighter`}>
-            <ChatList
-              onSelectRoom={(roomId) => {
-                setSelectedRoom(roomId);
-                setActiveComponent('messages');
-              }}
-              selectedRoom={selectedRoom}
-              rooms={rooms} // This is Slack channels now
-              selectedView={selectedView}
-            />
-          </div>
-          {selectedRoom && (
-            <div className="w-2/3 flex flex-col">
-              {/* Tab Navigation for Slack */}
-              <div className="flex border-b border-dark-lighter">
-                <button
-                  onClick={() => setActiveComponent('messages')}
-                  className={activeComponent === 'messages' ? 'text-primary' : 'text-gray-400'}
-                >
-                  Messages
-                </button>
-                <button
-                  onClick={() => setActiveComponent('summary')}
-                  className={activeComponent === 'summary' ? 'text-primary' : 'text-gray-400'}
-                >
-                  Summary
-                </button>
-                {/* Skip details tab for Slack if you have no equivalent */}
-              </div>
-  
-              <div className="flex-1 overflow-auto p-6">
-                {renderRoomContent()}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-  
-    
-
-    return null;
+  const handleSelectRoom = (id) => {
+    setSelectedRoom(id);
+    setActiveComponent('messages');
+    setPanelOpen(true);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-dark">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  const handleClosePanel = () => {
+    setSelectedRoom(null);
+    setActiveComponent('messages');
+    setPanelOpen(false);
+  };
 
-  if (error) {
+  const handleGenerateReport = async () => {
+    try {
+      const res = await api.get('/report/generate');
+      toast.info(`AI Summary: ${res.data.summary}`);
+    } catch (err) {
+      console.error('Generate report error:', err);
+      toast.error('Failed to generate report');
+    }
+  };
+
+  if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-dark">
-        <div className="text-center">
-          <h2 className="text-xl font-bold mb-2">Error</h2>
-          <p className="text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-primary text-white rounded"
-          >
-            Retry
-          </button>
-        </div>
+      <div className="flex items-center justify-center h-screen bg-dark text-white">
+        <LoadingSpinner size="large" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-dark text-white">
       <Sidebar
-        selectedView={selectedView}
-        onViewChange={(view) => {
-          setSelectedView(view);
-          setSelectedRoom(null);
-          setActiveComponent('messages');
-        }}
-        user={user}
+        accounts={accounts}
+        selectedPlatform={selectedPlatform}
+        onPlatformChange={setSelectedPlatform}
       />
-      <main className="flex-1 overflow-hidden bg-dark">
-        <div className="h-full flex flex-col">
-          <header className="bg-dark-lighter px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-semibold">
-              {selectedRoom
-                ? `Room ${selectedRoom} - ${activeComponent.charAt(0).toUpperCase() + activeComponent.slice(1)}`
-                : selectedView.charAt(0).toUpperCase() + selectedView.slice(1)
-              }
-            </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-gray-400">{user?.email}</span>
-            </div>
-          </header>
-          <div className="flex-1 overflow-auto">
-            {renderMainContent()}
-          </div>
+      <main className="flex-1 overflow-hidden flex flex-col">
+        <div className="p-4">
+          {/* Generate Report Button */}
+          <button onClick={handleGenerateReport} className="px-4 py-2 bg-primary text-white rounded">
+            Generate Report
+          </button>
         </div>
+        <UnifiedInbox
+          accounts={accounts}
+          messages={messages}
+          selectedPlatform={selectedPlatform}
+          onSelectRoom={handleSelectRoom}
+          selectedRoom={selectedRoom}
+          activeComponent={activeComponent}
+          setActiveComponent={setActiveComponent}
+          panelOpen={panelOpen}
+          handleClosePanel={handleClosePanel}
+        />
       </main>
     </div>
   );

@@ -14,10 +14,13 @@
     "@slack/web-api": "^7.8.0",
     "axios": "^1.7.7",
     "date-fns": "^4.1.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-icons": "^5.3.0",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "react-toastify": "^11.0.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
